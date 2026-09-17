@@ -131,7 +131,7 @@ export function ProjectTaskRunner({
       </Card>
 
       {status === "done" && !submitting ? (
-        <div className="flex items-center gap-2 rounded-md border border-mastery-strong/30 bg-mastery-strong/[0.06] px-4 py-3 text-sm text-mastery-strong">
+        <div className="flex items-center gap-2 rounded-md border border-mastery-strong/30 bg-mastery-strong/6 px-4 py-3 text-sm text-mastery-strong">
           <CheckCircle2 className="h-4 w-4" aria-hidden />
           {t.taskRunner.approved}
         </div>

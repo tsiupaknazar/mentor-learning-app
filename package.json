@@ -41,18 +41,17 @@
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.10.2",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "autoprefixer": "^10.4.20",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.5",
     "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.17",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.2"
   },
   "overrides": {

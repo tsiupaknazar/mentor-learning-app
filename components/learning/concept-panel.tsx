@@ -10,7 +10,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 export function ConceptPanel({ concept }: { concept: Concept }) {
   const { t } = useLocale();
   return (
-    <Card className="border-accent/25 bg-accent/[0.03]">
+    <Card className="border-accent/25 bg-accent/3">
       <CardContent className="space-y-4 p-5">
         <div className="flex items-center gap-2">
           <BookOpen className="h-4 w-4 text-accent" aria-hidden />

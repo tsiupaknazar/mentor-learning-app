@@ -55,7 +55,7 @@ export function FeedbackPanel({
         <FeedbackRow label={t.feedback.nextStep} text={evaluation.nextStep} />
 
         {evaluation.detectedMisconception && (
-          <div className="rounded-md border border-mastery-weak/30 bg-mastery-weak/[0.06] p-3">
+          <div className="rounded-md border border-mastery-weak/30 bg-mastery-weak/6 p-3">
             <p className="font-mono text-[11px] uppercase tracking-wide text-mastery-weak">
               {t.feedback.conceptualGapDetected}
             </p>
@@ -125,7 +125,7 @@ function MentorFollowUp({ question, exerciseId }: { question: string; exerciseId
   }
 
   return (
-    <div className="space-y-2 rounded-md border border-accent/30 bg-accent/[0.05] p-3">
+    <div className="space-y-2 rounded-md border border-accent/30 bg-accent/5 p-3">
       <p className="font-mono text-[11px] uppercase tracking-wide text-accent">{t.feedback.mentorFollowUp}</p>
       <p className="text-sm text-foreground/90">{question}</p>
 

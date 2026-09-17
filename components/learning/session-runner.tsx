@@ -457,7 +457,7 @@ export function SessionRunner({
         {visibleHints.length > 0 && (
           <div className="space-y-2">
             {visibleHints.map((h, i) => (
-              <div key={i} className="rounded-md border border-accent/25 bg-accent/[0.05] p-3">
+              <div key={i} className="rounded-md border border-accent/25 bg-accent/5 p-3">
                 <p className="font-mono text-[11px] uppercase tracking-wide text-accent">
                   {t.session.hintLabel(i + 1)} · {t.exercise.hintLevelLabels[h.level] ?? h.level.replace(/_/g, " ")}
                 </p>

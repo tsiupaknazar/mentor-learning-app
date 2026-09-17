@@ -88,7 +88,7 @@ export default function LandingPage() {
                   I used a var-hoisted counter here because it was easier.
                 </p>
               </div>
-              <div className="rounded-md border border-accent/25 bg-accent/[0.06] p-3">
+              <div className="rounded-md border border-accent/25 bg-accent/6 p-3">
                 <span className="text-accent">mentor —</span>
                 <p className="mt-1 text-foreground/90">
                   Not sufficient. Easier in what sense — implementation time, runtime
@@ -102,7 +102,7 @@ export default function LandingPage() {
                   ...it&apos;ll log the final value every time, not the value at creation.
                 </p>
               </div>
-              <div className="rounded-md border border-mastery-strong/25 bg-mastery-strong/[0.06] p-3">
+              <div className="rounded-md border border-mastery-strong/25 bg-mastery-strong/6 p-3">
                 <span className="text-mastery-strong">mentor —</span>
                 <p className="mt-1 text-foreground/90">
                   Correct diagnosis. Now fix it with a per-iteration binding — don&apos;t just
@@ -152,7 +152,7 @@ export default function LandingPage() {
                 A video course that marks a topic &ldquo;complete&rdquo; the moment you watch it.
               </p>
             </div>
-            <div className="rounded-lg border border-accent/40 bg-accent/[0.04] p-5">
+            <div className="rounded-lg border border-accent/40 bg-accent/4 p-5">
               <p className="font-mono text-xs text-accent">this</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 A system that continuously measures what you can actually do, finds where your
