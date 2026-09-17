@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Lightbulb, Loader2 } from "lucide-react";
 
 import type { Id } from "@/convex/_generated/dataModel";
@@ -115,9 +116,9 @@ export function ProblemSolver({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <a href="/practice" className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground">
+        <Link href="/practice" className="font-mono text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground">
           ← {t.practice.backToBoard}
-        </a>
+        </Link>
       </div>
 
       <Card>
@@ -222,7 +223,7 @@ export function ProblemSolver({
               </Button>
             )}
             <Button asChild>
-              <a href="/practice">{t.practice.backToBoard}</a>
+              <Link href="/practice">{t.practice.backToBoard}</Link>
             </Button>
           </div>
         </div>

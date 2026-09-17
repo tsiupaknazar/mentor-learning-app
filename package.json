@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "convex:dev": "convex dev",
     "convex:deploy": "convex deploy"
@@ -30,16 +30,15 @@
     "@uiw/react-codemirror": "^4.23.6",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
-    "ai": "^4.0.32",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.17.4",
     "lucide-react": "^0.469.0",
-    "next": "14.2.35",
+    "next": "16.3.5",
     "posthog-js": "^1.429.5",
     "prettier": "^3.9.6",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "server-only": "^0.0.1",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
@@ -47,13 +46,17 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "autoprefixer": "^10.4.20",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.35",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.5",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
   }
 }
