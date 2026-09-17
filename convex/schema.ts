@@ -252,6 +252,11 @@ export default defineSchema({
       hint: v.optional(v.string()),
       nextStep: v.string(),
       detectedMisconception: v.optional(v.string()),
+      // Stable, English, language-independent identifier for the
+      // detected misconception — see lib/schemas.ts's evaluationSchema
+      // comment and convex/mistakes.ts's upsertMistake, which matches
+      // recurrences on this instead of the locale-dependent prose above.
+      detectedMisconceptionKey: v.optional(v.string()),
       mentorFollowUp: v.optional(v.string()),
     }),
     submittedAt: v.number(),
