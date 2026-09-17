@@ -210,7 +210,7 @@ export function PracticeBoard({ userId }: { userId: Id<"users"> }) {
           <p className="font-mono text-xs text-muted-foreground">{t.practice.problemsCount(filtered.length)}</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map((p) => {
-              const meta = STATUS_ICON[p.status];
+              const meta = STATUS_ICON[p.status as keyof typeof STATUS_ICON];
               const StatusIcon = meta.icon;
               const cardTranslation = translatedById[p._id];
               const title = cardTranslation?.title ?? p.title;

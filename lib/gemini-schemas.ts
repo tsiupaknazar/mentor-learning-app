@@ -1,4 +1,4 @@
-import { SchemaType, type Schema } from "@google/generative-ai";
+import { Type, type Schema } from "@google/genai";
 
 /**
  * Hand-written Gemini `responseSchema` definitions paired with each Zod
@@ -20,25 +20,25 @@ import { SchemaType, type Schema } from "@google/generative-ai";
  */
 
 export const diagnosticSetGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    topic: { type: SchemaType.STRING },
+    topic: { type: Type.STRING },
     questions: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          id: { type: SchemaType.STRING },
+          id: { type: Type.STRING },
           type: {
-            type: SchemaType.STRING,
+            type: Type.STRING,
             enum: ["knowledge", "code_reading", "debugging", "implementation", "explanation"],
           },
-          subtopic: { type: SchemaType.STRING },
-          prompt: { type: SchemaType.STRING },
-          codeSnippet: { type: SchemaType.STRING, nullable: true },
+          subtopic: { type: Type.STRING },
+          prompt: { type: Type.STRING },
+          codeSnippet: { type: Type.STRING, nullable: true },
           choices: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING },
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
             nullable: true,
           },
         },
@@ -50,26 +50,26 @@ export const diagnosticSetGeminiSchema: Schema = {
 };
 
 export const knowledgeProfileGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    topic: { type: SchemaType.STRING },
+    topic: { type: Type.STRING },
     subtopics: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          subtopic: { type: SchemaType.STRING },
-          band: { type: SchemaType.STRING, enum: ["weak", "medium", "strong"] },
-          rationale: { type: SchemaType.STRING },
+          subtopic: { type: Type.STRING },
+          band: { type: Type.STRING, enum: ["weak", "medium", "strong"] },
+          rationale: { type: Type.STRING },
         },
         required: ["subtopic", "band", "rationale"],
       },
     },
     suggestedLevel: {
-      type: SchemaType.STRING,
+      type: Type.STRING,
       enum: ["beginner", "junior", "intermediate", "advanced"],
     },
-    summary: { type: SchemaType.STRING },
+    summary: { type: Type.STRING },
   },
   required: ["topic", "subtopics", "suggestedLevel", "summary"],
 };
@@ -93,32 +93,32 @@ const EXERCISE_DIFFICULTIES = ["easy", "medium", "hard", "interview", "real_worl
 const PROGRAMMING_LANGUAGES = ["javascript", "typescript", "html", "css", "python", "sql"];
 
 export const exerciseGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    id: { type: SchemaType.STRING },
-    topic: { type: SchemaType.STRING },
-    subtopic: { type: SchemaType.STRING },
-    type: { type: SchemaType.STRING, enum: EXERCISE_TYPES },
-    difficulty: { type: SchemaType.STRING, enum: EXERCISE_DIFFICULTIES },
-    language: { type: SchemaType.STRING, enum: PROGRAMMING_LANGUAGES },
-    title: { type: SchemaType.STRING },
-    prompt: { type: SchemaType.STRING },
-    starterCode: { type: SchemaType.STRING, nullable: true },
-    choices: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
+    id: { type: Type.STRING },
+    topic: { type: Type.STRING },
+    subtopic: { type: Type.STRING },
+    type: { type: Type.STRING, enum: EXERCISE_TYPES },
+    difficulty: { type: Type.STRING, enum: EXERCISE_DIFFICULTIES },
+    language: { type: Type.STRING, enum: PROGRAMMING_LANGUAGES },
+    title: { type: Type.STRING },
+    prompt: { type: Type.STRING },
+    starterCode: { type: Type.STRING, nullable: true },
+    choices: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
     testCases: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       nullable: true,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          input: { type: SchemaType.STRING },
-          expectedOutput: { type: SchemaType.STRING },
-          description: { type: SchemaType.STRING, nullable: true },
+          input: { type: Type.STRING },
+          expectedOutput: { type: Type.STRING },
+          description: { type: Type.STRING, nullable: true },
         },
         required: ["input", "expectedOutput", "description"],
       },
     },
-    referenceSolution: { type: SchemaType.STRING },
+    referenceSolution: { type: Type.STRING },
   },
   required: [
     "id",
@@ -138,36 +138,36 @@ export const exerciseGeminiSchema: Schema = {
 
 /** A batch of exercises for the Practice board — same shape as a single exercise, just wrapped in an array. */
 export const practiceProblemSetGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    problems: { type: SchemaType.ARRAY, items: exerciseGeminiSchema },
+    problems: { type: Type.ARRAY, items: exerciseGeminiSchema },
   },
   required: ["problems"],
 };
 
 export const evaluationGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    result: { type: SchemaType.STRING, enum: ["correct", "partially_correct", "incorrect"] },
+    result: { type: Type.STRING, enum: ["correct", "partially_correct", "incorrect"] },
     scores: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       properties: {
-        correctness: { type: SchemaType.NUMBER },
-        logic: { type: SchemaType.NUMBER },
-        codeQuality: { type: SchemaType.NUMBER },
-        bestPractices: { type: SchemaType.NUMBER },
-        edgeCaseHandling: { type: SchemaType.NUMBER },
+        correctness: { type: Type.NUMBER },
+        logic: { type: Type.NUMBER },
+        codeQuality: { type: Type.NUMBER },
+        bestPractices: { type: Type.NUMBER },
+        edgeCaseHandling: { type: Type.NUMBER },
       },
       required: ["correctness", "logic", "codeQuality", "bestPractices", "edgeCaseHandling"],
     },
-    whatYouDid: { type: SchemaType.STRING },
-    problem: { type: SchemaType.STRING, nullable: true },
-    whyItMatters: { type: SchemaType.STRING, nullable: true },
-    hint: { type: SchemaType.STRING, nullable: true },
-    nextStep: { type: SchemaType.STRING },
-    detectedMisconception: { type: SchemaType.STRING, nullable: true },
-    detectedMisconceptionKey: { type: SchemaType.STRING, nullable: true },
-    mentorFollowUp: { type: SchemaType.STRING, nullable: true },
+    whatYouDid: { type: Type.STRING },
+    problem: { type: Type.STRING, nullable: true },
+    whyItMatters: { type: Type.STRING, nullable: true },
+    hint: { type: Type.STRING, nullable: true },
+    nextStep: { type: Type.STRING },
+    detectedMisconception: { type: Type.STRING, nullable: true },
+    detectedMisconceptionKey: { type: Type.STRING, nullable: true },
+    mentorFollowUp: { type: Type.STRING, nullable: true },
   },
   required: [
     "result",
@@ -185,36 +185,36 @@ export const evaluationGeminiSchema: Schema = {
 
 /** Reaction to a learner's reply to `mentorFollowUp` — a short, ungraded continuation of that one exchange. */
 export const mentorFollowUpReactionGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    reaction: { type: SchemaType.STRING },
-    resolved: { type: SchemaType.BOOLEAN },
+    reaction: { type: Type.STRING },
+    resolved: { type: Type.BOOLEAN },
   },
   required: ["reaction", "resolved"],
 };
 
 export const hintGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    level: { type: SchemaType.STRING, enum: ["direction", "specific_problem", "strong_hint"] },
-    text: { type: SchemaType.STRING },
+    level: { type: Type.STRING, enum: ["direction", "specific_problem", "strong_hint"] },
+    text: { type: Type.STRING },
   },
   required: ["level", "text"],
 };
 
 export const conceptGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    topic: { type: SchemaType.STRING },
-    subtopic: { type: SchemaType.STRING },
-    explanation: { type: SchemaType.STRING },
-    keyPoints: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+    topic: { type: Type.STRING },
+    subtopic: { type: Type.STRING },
+    explanation: { type: Type.STRING },
+    keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
     example: {
-      type: SchemaType.OBJECT,
+      type: Type.OBJECT,
       nullable: true,
       properties: {
-        code: { type: SchemaType.STRING },
-        explanation: { type: SchemaType.STRING },
+        code: { type: Type.STRING },
+        explanation: { type: Type.STRING },
       },
       required: ["code", "explanation"],
     },
@@ -235,13 +235,13 @@ export const conceptGeminiSchema: Schema = {
  */
 function topicNodeSchema(childItems: Schema): Schema {
   return {
-    type: SchemaType.OBJECT,
+    type: Type.OBJECT,
     properties: {
-      id: { type: SchemaType.STRING },
-      title: { type: SchemaType.STRING },
-      summary: { type: SchemaType.STRING },
-      prerequisiteIds: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
-      children: { type: SchemaType.ARRAY, items: childItems },
+      id: { type: Type.STRING },
+      title: { type: Type.STRING },
+      summary: { type: Type.STRING },
+      prerequisiteIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+      children: { type: Type.ARRAY, items: childItems },
     },
     required: ["id", "title", "summary", "prerequisiteIds", "children"],
   };
@@ -250,17 +250,17 @@ function topicNodeSchema(childItems: Schema): Schema {
 // Depth 3 (deepest allowed): still shaped like a topic node, but its own
 // `children` items are left as an empty-schema placeholder — there is
 // nothing valid to put there, so Gemini reliably returns `[]`.
-const leafPlaceholder: Schema = { type: SchemaType.OBJECT, properties: {} };
+const leafPlaceholder: Schema = { type: Type.OBJECT, properties: {} };
 const depth3 = topicNodeSchema(leafPlaceholder);
 const depth2 = topicNodeSchema(depth3);
 const depth1 = topicNodeSchema(depth2);
 
 export const learningPathGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    title: { type: SchemaType.STRING },
-    rationale: { type: SchemaType.STRING },
-    topics: { type: SchemaType.ARRAY, items: depth1 },
+    title: { type: Type.STRING },
+    rationale: { type: Type.STRING },
+    topics: { type: Type.ARRAY, items: depth1 },
   },
   required: ["title", "rationale", "topics"],
 };
@@ -270,29 +270,29 @@ export const learningPathGeminiSchema: Schema = {
 // ---------------------------------------------------------------------------
 
 export const projectPlanGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    title: { type: SchemaType.STRING },
-    description: { type: SchemaType.STRING },
+    title: { type: Type.STRING },
+    description: { type: Type.STRING },
     files: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          filename: { type: SchemaType.STRING },
-          language: { type: SchemaType.STRING, enum: PROGRAMMING_LANGUAGES },
+          filename: { type: Type.STRING },
+          language: { type: Type.STRING, enum: PROGRAMMING_LANGUAGES },
         },
         required: ["filename", "language"],
       },
     },
     tasks: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          taskCode: { type: SchemaType.STRING },
-          title: { type: SchemaType.STRING },
-          requirements: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+          taskCode: { type: Type.STRING },
+          title: { type: Type.STRING },
+          requirements: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
         required: ["taskCode", "title", "requirements"],
       },
@@ -302,16 +302,16 @@ export const projectPlanGeminiSchema: Schema = {
 };
 
 export const projectIdeasGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
     ideas: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          topic: { type: SchemaType.STRING },
-          title: { type: SchemaType.STRING },
-          description: { type: SchemaType.STRING },
+          topic: { type: Type.STRING },
+          title: { type: Type.STRING },
+          description: { type: Type.STRING },
         },
         required: ["topic", "title", "description"],
       },
@@ -321,19 +321,19 @@ export const projectIdeasGeminiSchema: Schema = {
 };
 
 export const translatedLearningPathGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    title: { type: SchemaType.STRING },
-    rationale: { type: SchemaType.STRING },
-    knowledgeProfileSummary: { type: SchemaType.STRING, nullable: true },
+    title: { type: Type.STRING },
+    rationale: { type: Type.STRING },
+    knowledgeProfileSummary: { type: Type.STRING, nullable: true },
     topics: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          externalId: { type: SchemaType.STRING },
-          title: { type: SchemaType.STRING },
-          summary: { type: SchemaType.STRING },
+          externalId: { type: Type.STRING },
+          title: { type: Type.STRING },
+          summary: { type: Type.STRING },
         },
         required: ["externalId", "title", "summary"],
       },
@@ -343,18 +343,18 @@ export const translatedLearningPathGeminiSchema: Schema = {
 };
 
 export const translatedProjectGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    title: { type: SchemaType.STRING },
-    description: { type: SchemaType.STRING },
+    title: { type: Type.STRING },
+    description: { type: Type.STRING },
     tasks: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          taskCode: { type: SchemaType.STRING },
-          title: { type: SchemaType.STRING },
-          requirements: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+          taskCode: { type: Type.STRING },
+          title: { type: Type.STRING },
+          requirements: { type: Type.ARRAY, items: { type: Type.STRING } },
         },
         required: ["taskCode", "title", "requirements"],
       },
@@ -364,17 +364,17 @@ export const translatedProjectGeminiSchema: Schema = {
 };
 
 export const codeReviewGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
-    verdict: { type: SchemaType.STRING, enum: ["approved", "changes_requested"] },
-    summary: { type: SchemaType.STRING },
+    verdict: { type: Type.STRING, enum: ["approved", "changes_requested"] },
+    summary: { type: Type.STRING },
     comments: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          severity: { type: SchemaType.STRING, enum: ["blocking", "suggestion", "nit"] },
-          comment: { type: SchemaType.STRING },
+          severity: { type: Type.STRING, enum: ["blocking", "suggestion", "nit"] },
+          comment: { type: Type.STRING },
         },
         required: ["severity", "comment"],
       },
@@ -384,18 +384,18 @@ export const codeReviewGeminiSchema: Schema = {
 };
 
 export const translatedExerciseBatchGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
     exercises: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          id: { type: SchemaType.STRING },
-          title: { type: SchemaType.STRING },
-          subtopic: { type: SchemaType.STRING },
-          prompt: { type: SchemaType.STRING },
-          choices: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
+          id: { type: Type.STRING },
+          title: { type: Type.STRING },
+          subtopic: { type: Type.STRING },
+          prompt: { type: Type.STRING },
+          choices: { type: Type.ARRAY, items: { type: Type.STRING }, nullable: true },
         },
         required: ["id", "title", "subtopic", "prompt", "choices"],
       },
@@ -405,15 +405,15 @@ export const translatedExerciseBatchGeminiSchema: Schema = {
 };
 
 export const translatedMistakeBatchGeminiSchema: Schema = {
-  type: SchemaType.OBJECT,
+  type: Type.OBJECT,
   properties: {
     mistakes: {
-      type: SchemaType.ARRAY,
+      type: Type.ARRAY,
       items: {
-        type: SchemaType.OBJECT,
+        type: Type.OBJECT,
         properties: {
-          id: { type: SchemaType.STRING },
-          description: { type: SchemaType.STRING },
+          id: { type: Type.STRING },
+          description: { type: Type.STRING },
         },
         required: ["id", "description"],
       },

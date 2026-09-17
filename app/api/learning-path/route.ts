@@ -41,6 +41,7 @@ export async function POST(req: Request) {
       strongTopics: [],
       recurringMistakes: [],
       recentPerformance: 0,
+      pathSubject: null,
     };
 
     const { system, prompt } = buildLearningPathPrompt(learnerContext, body.topic, body.knowledgeProfile);

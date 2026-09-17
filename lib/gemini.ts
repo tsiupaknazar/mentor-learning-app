@@ -1,5 +1,5 @@
 import "server-only";
-import { GoogleGenerativeAI, type GenerationConfig, type Schema } from "@google/generative-ai";
+import { GoogleGenAI, type GenerateContentConfig, type Schema } from "@google/genai";
 import { z } from "zod";
 
 /**
@@ -21,9 +21,9 @@ import { z } from "zod";
  *     diagnostic evaluation, per section 31.
  */
 
-let client: GoogleGenerativeAI | null = null;
+let client: GoogleGenAI | null = null;
 
-function getClient(): GoogleGenerativeAI {
+function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new GeminiConfigError(
@@ -31,7 +31,7 @@ function getClient(): GoogleGenerativeAI {
     );
   }
   if (!client) {
-    client = new GoogleGenerativeAI(apiKey);
+    client = new GoogleGenAI({ apiKey });
   }
   return client;
 }
@@ -79,7 +79,7 @@ interface GenerateStructuredParams<T> {
   prompt: string;
   /** Defaults to "fast"; use "reasoning" for full code review / diagnostics. */
   tier?: GeminiModelTier;
-  generationConfig?: Partial<GenerationConfig>;
+  generationConfig?: Partial<GenerateContentConfig>;
 }
 
 /** Strips ```json fences Gemini sometimes adds despite JSON mode — cheap insurance, not the primary fix. */
@@ -107,21 +107,22 @@ export async function generateStructured<T>({
   generationConfig,
 }: GenerateStructuredParams<T>): Promise<T> {
   const modelName = resolveModelName(tier);
-  const model = getClient().getGenerativeModel({
-    model: modelName,
+  const config: GenerateContentConfig = {
     systemInstruction: system,
-    generationConfig: {
-      responseMimeType: "application/json",
-      ...(responseSchema ? { responseSchema } : {}),
-      temperature: 0.4,
-      ...generationConfig,
-    },
-  });
+    responseMimeType: "application/json",
+    ...(responseSchema ? { responseSchema } : {}),
+    temperature: 0.4,
+    ...generationConfig,
+  };
 
   const attempt = async (userPrompt: string): Promise<{ raw: string }> => {
     try {
-      const result = await model.generateContent(userPrompt);
-      return { raw: result.response.text() };
+      const result = await getClient().models.generateContent({
+        model: modelName,
+        contents: userPrompt,
+        config,
+      });
+      return { raw: result.text ?? "" };
     } catch (err) {
       throw new GeminiRequestError(
         `Gemini request failed (model: "${modelName}"). If this is a 404/"not found" error, the model name is likely stale — check https://ai.google.dev/gemini-api/docs/models and update GEMINI_MODEL / GEMINI_REASONING_MODEL.`,
@@ -176,11 +177,10 @@ interface GenerateTextParams {
 
 /** Freeform text generation for conversational mentor follow-ups (e.g. interview mode). */
 export async function generateText({ system, prompt, tier = "fast" }: GenerateTextParams): Promise<string> {
-  const model = getClient().getGenerativeModel({
+  const result = await getClient().models.generateContent({
     model: resolveModelName(tier),
-    systemInstruction: system,
-    generationConfig: { temperature: 0.6 },
+    contents: prompt,
+    config: { systemInstruction: system, temperature: 0.6 },
   });
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  return result.text ?? "";
 }
