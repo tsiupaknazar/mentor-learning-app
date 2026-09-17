@@ -21,8 +21,7 @@ if (!("ResizeObserver" in globalThis)) {
     unobserve() {}
     disconnect() {}
   }
-  // @ts-expect-error - minimal test stub, not a full ResizeObserver
-  globalThis.ResizeObserver = ResizeObserverStub;
+  globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver;
 }
 
 vi.mock("next/navigation", () => ({
