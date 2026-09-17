@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Design tokens — "redline review" system.
+
+  Grounded in the product's actual subject matter: a senior-engineer code
+  reviewer who marks up your work like a real reviewer would — precise,
+  high-contrast, and willing to push back. The palette borrows directly
+  from that vernacular: a dark workspace (the desk you write code on) with
+  three functional marks lifted straight from code review itself —
+  redline (requested changes / critique), approved (shipped), and pending
+  (in review) — never used decoratively, only where that exact judgment
+  is being rendered. A slab-weight serif (Fraunces, see app/layout.tsx)
+  carries headline authority; IBM Plex Sans/Mono stay quiet and functional.
+
+  This intentionally stays dark-mode rather than flipping to a light
+  "paper" surface — CodeMirror sessions run long, and a hard light/dark
+  swap this pass would also silently break secondary-text contrast on
+  every existing Card usage across the app (text-muted-foreground is
+  tuned for a dark surface throughout). Revisit as its own scoped pass if
+  a literal light "paper" treatment is wanted later.
+*/
+
+@layer base {
+  :root {
+    --background: 80 6% 5%;
+    --foreground: 60 10% 95%;
+
+    --surface: 75 6% 8%;
+    --surface-raised: 72 6% 12%;
+    --border: 70 6% 20%;
+
+    --card: 70 7% 10%;
+    --card-foreground: 60 10% 95%;
+
+    --popover: 72 7% 11%;
+    --popover-foreground: 60 10% 95%;
+
+    --muted: 70 6% 15%;
+    --muted-foreground: 60 6% 63%;
+
+    /* Pending — in-progress, primary action. A bolder, more precise gold
+       than a generic "amber", read as an open review marker. */
+    --accent: 38 78% 56%;
+    --accent-foreground: 70 10% 8%;
+
+    --primary: 38 78% 56%;
+    --primary-foreground: 70 10% 8%;
+
+    --secondary: 70 6% 15%;
+    --secondary-foreground: 60 10% 95%;
+
+    /* Redline — requested changes / critique / destructive. A true red,
+       not an orange-leaning terracotta, so it never reads as "just
+       another warm accent" next to the pending gold. */
+    --destructive: 6 74% 55%;
+    --destructive-foreground: 60 10% 97%;
+    --danger: 6 74% 55%;
+    --redline: 6 74% 55%;
+    --redline-foreground: 60 10% 97%;
+
+    /* Approved — mastered / shipped. */
+    --mastery-strong: 152 46% 40%;
+    --mastery-medium: 38 78% 56%;
+    --mastery-weak: 6 74% 55%;
+
+    --input: 70 6% 17%;
+    --ring: 38 78% 56%;
+
+    --radius: 0.375rem;
+
+    --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+    --font-serif: "Fraunces", Georgia, serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  ::selection {
+    background-color: hsl(var(--accent) / 0.35);
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .font-mono-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.4) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.4) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  /* A hard, offset "stacked paper" shadow — the one hero panel per screen
+     uses this instead of a soft blurred rgba shadow. Deliberately neutral
+     (not the redline color — that stays reserved for critique moments
+     only) and deliberately not a utility every card reaches for.
+  */
+  .shadow-stack {
+    box-shadow: 4px 4px 0 0 hsl(var(--border));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
