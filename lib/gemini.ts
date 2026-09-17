@@ -114,10 +114,15 @@ export async function generateStructured<T>({
     temperature: 0.4,
     ...generationConfig,
   };
+  // Resolved once, outside attempt()'s try/catch below — otherwise a
+  // missing-API-key GeminiConfigError gets caught and misreported as a
+  // GeminiRequestError, losing the 503-vs-502 distinction handleRouteError
+  // depends on to tell "not configured" apart from "the request failed".
+  const client = getClient();
 
   const attempt = async (userPrompt: string): Promise<{ raw: string }> => {
     try {
-      const result = await getClient().models.generateContent({
+      const result = await client.models.generateContent({
         model: modelName,
         contents: userPrompt,
         config,

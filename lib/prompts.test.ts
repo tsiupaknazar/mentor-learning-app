@@ -1,0 +1,304 @@
+import { describe, expect, it } from "vitest";
+import {
+  MENTOR_PERSONA,
+  TEAM_LEAD_PERSONA,
+  buildDiagnosticPrompt,
+  buildKnowledgeProfilePrompt,
+  buildLearningPathPrompt,
+  buildPracticeProblemSetPrompt,
+  buildExercisePrompt,
+  buildEvaluationPrompt,
+  buildFollowUpReactionPrompt,
+  buildConceptPrompt,
+  buildProjectPlanPrompt,
+  buildProjectIdeasPrompt,
+  buildLearningPathTranslationPrompt,
+  buildProjectTranslationPrompt,
+  buildExerciseTranslationPrompt,
+  buildMistakeTranslationPrompt,
+  buildCodeReviewPrompt,
+  buildHintPrompt,
+} from "@/lib/prompts";
+import type { Exercise } from "@/lib/schemas";
+import type { LearnerContext } from "@/types/domain";
+
+function ctx(overrides: Partial<LearnerContext> = {}): LearnerContext {
+  return {
+    level: "junior",
+    learningGoal: "improve_skills",
+    learningStyle: "balanced",
+    locale: "en",
+    currentTopics: [],
+    weakTopics: [],
+    strongTopics: [],
+    recurringMistakes: [],
+    recentPerformance: 50,
+    pathSubject: null,
+    ...overrides,
+  };
+}
+
+const EXERCISE: Exercise = {
+  id: "ex1",
+  topic: "JavaScript",
+  subtopic: "closures",
+  type: "debugging",
+  difficulty: "medium",
+  language: "javascript",
+  title: "Fix the counter",
+  prompt: "Fix the bug.",
+  starterCode: null,
+  choices: null,
+  testCases: null,
+  referenceSolution: "function counter() {}",
+};
+
+describe("languageInstruction (via any builder)", () => {
+  it("adds no language instruction for en", () => {
+    const { system } = buildConceptPrompt(ctx({ locale: "en" }), "JS", "closures");
+    expect(system).not.toContain("LANGUAGE:");
+  });
+
+  it("adds a Ukrainian language instruction for uk", () => {
+    const { system } = buildConceptPrompt(ctx({ locale: "uk" }), "JS", "closures");
+    expect(system).toContain("LANGUAGE:");
+    expect(system).toContain("Ukrainian");
+  });
+});
+
+describe("buildDiagnosticPrompt", () => {
+  it("includes the topic and self-reported level", () => {
+    const { prompt } = buildDiagnosticPrompt("SQL", "beginner");
+    expect(prompt).toContain("Topic: SQL");
+    expect(prompt).toContain("beginner");
+  });
+});
+
+describe("buildKnowledgeProfilePrompt", () => {
+  it("embeds the answered questions as JSON", () => {
+    const { prompt } = buildKnowledgeProfilePrompt("SQL", [
+      { prompt: "What is a JOIN?", type: "knowledge", subtopic: "joins", answer: "combines tables" },
+    ]);
+    expect(prompt).toContain("What is a JOIN?");
+    expect(prompt).toContain("SQL");
+  });
+});
+
+describe("buildLearningPathPrompt", () => {
+  it("weights toward weak topics when present", () => {
+    const { prompt } = buildLearningPathPrompt(ctx({ weakTopics: ["Recursion"] }), "JavaScript", null);
+    expect(prompt).toContain("weak areas: Recursion");
+  });
+
+  it("falls back to foundational-concepts framing with no weak topics", () => {
+    const { prompt } = buildLearningPathPrompt(ctx(), "JavaScript", null);
+    expect(prompt).toContain("foundational concepts");
+  });
+
+  it("mentions there was no diagnostic when knowledgeProfile is null", () => {
+    const { prompt } = buildLearningPathPrompt(ctx(), "JavaScript", null);
+    expect(prompt).toContain("no diagnostic was taken");
+  });
+});
+
+describe("buildPracticeProblemSetPrompt", () => {
+  it("states a required language per topic when given one", () => {
+    const { prompt } = buildPracticeProblemSetPrompt(
+      ctx(),
+      [{ title: "CSS Flexbox", language: "css" }],
+      { easy: 1, medium: 1, hard: 0 },
+      []
+    );
+    expect(prompt).toContain('language MUST be "css"');
+    expect(prompt).toContain("2 problems total");
+  });
+
+  it("leaves language to judgment when none is given", () => {
+    const { prompt } = buildPracticeProblemSetPrompt(
+      ctx(),
+      [{ title: "Algorithms", language: null }],
+      { easy: 1, medium: 0, hard: 0 },
+      ["Two Sum"]
+    );
+    expect(prompt).toContain("pick whichever language genuinely fits");
+    expect(prompt).toContain("Two Sum");
+  });
+});
+
+describe("buildExercisePrompt", () => {
+  it("states a hard language requirement when one is required", () => {
+    const { prompt } = buildExercisePrompt(ctx(), "SQL", "joins", "medium", [], "sql");
+    expect(prompt).toContain('Language MUST be "sql"');
+  });
+
+  it("leaves language to judgment when none is required", () => {
+    const { prompt } = buildExercisePrompt(ctx(), "Algorithms", "big-o", "medium", [], null);
+    expect(prompt).toContain("Pick whichever of javascript/typescript/html/css/python/sql");
+  });
+
+  it("scopes the exercise strictly to the given subtopic", () => {
+    const { prompt } = buildExercisePrompt(ctx(), "JS", "closures", "hard", [], null);
+    expect(prompt).toContain('test ONLY "closures"');
+  });
+});
+
+describe("buildEvaluationPrompt", () => {
+  it("includes the mentor persona and the reference solution, never exposing it as the answer", () => {
+    const { system, prompt } = buildEvaluationPrompt(ctx(), EXERCISE, "my answer");
+    expect(system).toContain(MENTOR_PERSONA);
+    expect(prompt).toContain(EXERCISE.referenceSolution);
+    expect(prompt).toContain("my answer");
+  });
+});
+
+describe("buildFollowUpReactionPrompt", () => {
+  it("includes the original follow-up question and the learner's reply", () => {
+    const { prompt } = buildFollowUpReactionPrompt(
+      ctx(),
+      { title: EXERCISE.title, prompt: EXERCISE.prompt },
+      "Why is that easier?",
+      "Because it's shorter"
+    );
+    expect(prompt).toContain("Why is that easier?");
+    expect(prompt).toContain("Because it's shorter");
+  });
+});
+
+describe("buildConceptPrompt", () => {
+  it("asks for brevity when learning style is more_practice", () => {
+    const { prompt } = buildConceptPrompt(ctx({ learningStyle: "more_practice" }), "JS", "closures");
+    expect(prompt).toContain("keep this genuinely brief");
+  });
+
+  it("allows slightly more depth for more_theory", () => {
+    const { prompt } = buildConceptPrompt(ctx({ learningStyle: "more_theory" }), "JS", "closures");
+    expect(prompt).toContain("go slightly deeper");
+  });
+
+  it("uses the balanced default otherwise", () => {
+    const { prompt } = buildConceptPrompt(ctx({ learningStyle: "balanced" }), "JS", "closures");
+    expect(prompt).toContain("not a lecture");
+  });
+});
+
+describe("buildProjectPlanPrompt", () => {
+  it("adds a required-scope constraint for a markup-only topic", () => {
+    const { system, prompt } = buildProjectPlanPrompt(ctx(), "CSS Flexbox", "beginner");
+    expect(system).toContain("never write any code or file content");
+    expect(prompt).toContain("REQUIRED SCOPE");
+    expect(prompt).toContain("html, css");
+  });
+
+  it("adds no scope constraint for a general topic", () => {
+    const { prompt } = buildProjectPlanPrompt(ctx(), "Node.js REST APIs", "intermediate");
+    expect(prompt).not.toContain("REQUIRED SCOPE");
+  });
+
+  it("adds a correction line on retry after a scope violation", () => {
+    const { prompt } = buildProjectPlanPrompt(ctx(), "CSS Flexbox", "beginner", {
+      attemptedLanguages: ["javascript"],
+      requiredScope: ["html", "css"],
+    });
+    expect(prompt).toContain("CORRECTION REQUIRED");
+    expect(prompt).toContain("javascript");
+  });
+});
+
+describe("buildProjectIdeasPrompt", () => {
+  it("grounds ideas in the existing path when one exists", () => {
+    const { prompt } = buildProjectIdeasPrompt(ctx({ currentTopics: ["Closures"] }), "junior");
+    expect(prompt).toContain("Ground each idea in a topic from their current learning path");
+  });
+
+  it("falls back to well-rounded topics with no established path", () => {
+    const { prompt } = buildProjectIdeasPrompt(ctx(), "junior");
+    expect(prompt).toContain("don't have an established learning path yet");
+  });
+
+  it("scopes ideas when the active path is markup-only", () => {
+    const { prompt } = buildProjectIdeasPrompt(ctx({ pathSubject: "HTML/CSS" }), "beginner");
+    expect(prompt).toContain("REQUIRED SCOPE");
+  });
+});
+
+describe("translation prompt builders", () => {
+  it("buildLearningPathTranslationPrompt embeds the bundle and target language", () => {
+    const { prompt } = buildLearningPathTranslationPrompt(
+      { title: "JS Path", rationale: "r", knowledgeProfileSummary: null, topics: [] },
+      "uk"
+    );
+    expect(prompt).toContain("JS Path");
+    expect(prompt).toContain("Ukrainian");
+  });
+
+  it("buildProjectTranslationPrompt embeds the bundle", () => {
+    const { prompt } = buildProjectTranslationPrompt(
+      { title: "Kanban", description: "d", tasks: [] },
+      "uk"
+    );
+    expect(prompt).toContain("Kanban");
+  });
+
+  it("buildExerciseTranslationPrompt embeds every exercise's id", () => {
+    const { prompt } = buildExerciseTranslationPrompt(
+      [{ id: "ex1", title: "t", subtopic: "s", prompt: "p", choices: null }],
+      "uk"
+    );
+    expect(prompt).toContain('"id": "ex1"');
+  });
+
+  it("buildMistakeTranslationPrompt embeds every mistake's id", () => {
+    const { prompt } = buildMistakeTranslationPrompt([{ id: "m1", description: "d" }], "uk");
+    expect(prompt).toContain('"id": "m1"');
+  });
+});
+
+describe("buildCodeReviewPrompt", () => {
+  it("includes the task requirements and every submitted file", () => {
+    const { system, prompt } = buildCodeReviewPrompt(
+      ctx(),
+      { taskCode: "FE-101", title: "Build the form", requirements: ["validates email"] },
+      [{ filename: "index.html", content: "<form></form>" }],
+      null
+    );
+    expect(system).toContain(MENTOR_PERSONA);
+    expect(prompt).toContain("validates email");
+    expect(prompt).toContain("index.html");
+    expect(prompt).toContain("This is the first submission for this task.");
+  });
+
+  it("asks whether previous review comments were actually addressed on resubmission", () => {
+    const { prompt } = buildCodeReviewPrompt(
+      ctx(),
+      { taskCode: "FE-101", title: "Build the form", requirements: ["validates email"] },
+      [{ filename: "index.html", content: "<form></form>" }],
+      { summary: "Missing validation", comments: [{ severity: "blocking", comment: "no validation" }] }
+    );
+    expect(prompt).toContain("Missing validation");
+    expect(prompt).toContain("Check specifically whether THIS submission actually addresses");
+  });
+});
+
+describe("buildHintPrompt", () => {
+  it("uses the direction-level instruction and never reveals the fix", () => {
+    const { prompt } = buildHintPrompt(EXERCISE, "direction", null);
+    expect(prompt).toContain("Do not describe the bug or the approach");
+    expect(prompt).toContain("(no attempt yet)");
+  });
+
+  it("uses the strong_hint-level instruction while still withholding the full solution", () => {
+    const { prompt } = buildHintPrompt(EXERCISE, "strong_hint", "my attempt so far");
+    expect(prompt).toContain("do NOT write the complete implementation");
+    expect(prompt).toContain("my attempt so far");
+  });
+});
+
+describe("shared persona constants", () => {
+  it("MENTOR_PERSONA forbids unearned praise", () => {
+    expect(MENTOR_PERSONA).toContain("Never give unearned praise");
+  });
+
+  it("TEAM_LEAD_PERSONA frames work as real engineering tickets", () => {
+    expect(TEAM_LEAD_PERSONA).toContain("Team Lead");
+  });
+});
