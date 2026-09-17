@@ -106,7 +106,7 @@ export function SidebarNav() {
           <Flame className={cn("h-3.5 w-3.5", streak > 0 && "text-accent")} aria-hidden />
           {streak} {streak === 1 ? t.sidebar.day : t.sidebar.days}
         </div>
-        <UserButton afterSignOutUrl="/" />
+        <UserButton />
       </div>
     </aside>
   );

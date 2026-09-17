@@ -101,7 +101,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider afterSignOutUrl="/">
       <ConvexClientProvider>
         <PostHogProvider>
           <html lang="en" className={`dark ${plexSans.variable} ${plexMono.variable} ${fraunces.variable}`}>
