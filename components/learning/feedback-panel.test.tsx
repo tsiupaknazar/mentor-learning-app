@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { FeedbackPanel } from "./feedback-panel";
+import { FeedbackPanel, RewardStrip } from "./feedback-panel";
 import type { Evaluation } from "@/lib/schemas";
+import { dictionaries } from "@/lib/i18n/dictionaries";
 
 const BASE_EVALUATION: Evaluation = {
   result: "correct",
@@ -105,5 +106,39 @@ describe("FeedbackPanel's MentorFollowUp", () => {
       "/api/mentor-followup",
       expect.objectContaining({ method: "POST" })
     );
+  });
+});
+
+describe("RewardStrip", () => {
+  it("shows the XP earned and the mastery movement", () => {
+    render(<RewardStrip reward={{ xpAwarded: 100, masteryBefore: 41.6, masteryAfter: 48.2, newAchievements: [] }} />);
+    expect(screen.getByText("+100 XP")).toBeInTheDocument();
+    expect(screen.getByText("Topic mastery 42% → 48%")).toBeInTheDocument();
+  });
+
+  it("names a newly unlocked achievement from the catalog, with its description", () => {
+    render(<RewardStrip reward={{ xpAwarded: 100, masteryBefore: 0, masteryAfter: 8, newAchievements: ["first_win"] }} />);
+    expect(screen.getByText("Achievement unlocked")).toBeInTheDocument();
+    expect(screen.getByText(dictionaries.en.achievements.catalog.first_win.title)).toBeInTheDocument();
+    expect(screen.getByText(dictionaries.en.achievements.catalog.first_win.description)).toBeInTheDocument();
+  });
+
+  it("ignores achievement keys it has no catalog entry for", () => {
+    render(<RewardStrip reward={{ xpAwarded: 40, masteryBefore: 10, masteryAfter: 12, newAchievements: ["not_a_real_badge"] }} />);
+    expect(screen.queryByText("Achievement unlocked")).not.toBeInTheDocument();
+    expect(screen.getByText("+40 XP")).toBeInTheDocument();
+  });
+
+  it("omits the XP figure for a zero-XP attempt but still reports a mastery drop", () => {
+    render(<RewardStrip reward={{ xpAwarded: 0, masteryBefore: 60, masteryAfter: 55, newAchievements: [] }} />);
+    expect(screen.queryByText(/XP/)).not.toBeInTheDocument();
+    expect(screen.getByText("Topic mastery 60% → 55%")).toBeInTheDocument();
+  });
+
+  it("renders nothing when the attempt earned and changed nothing", () => {
+    const { container } = render(
+      <RewardStrip reward={{ xpAwarded: 0, masteryBefore: 90, masteryAfter: 90, newAchievements: [] }} />
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });

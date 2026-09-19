@@ -131,7 +131,7 @@ export function FeedbackButton() {
                 />
               </div>
 
-              {status === "error" && <p className="text-sm text-destructive">{t.feedbackForm.errorBody}</p>}
+              {status === "error" && <p role="alert" className="text-sm text-destructive">{t.feedbackForm.errorBody}</p>}
 
               <Button onClick={handleSubmit} disabled={!message.trim() || status === "submitting"} className="w-full">
                 {status === "submitting" ? (

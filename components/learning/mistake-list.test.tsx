@@ -35,6 +35,7 @@ describe("MistakeList", () => {
     vi.mocked(useQuery).mockReturnValue(undefined);
     const { container } = render(<MistakeList userId={"user1" as never} titleByTopicId={{}} />);
     expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading…" })).toBeInTheDocument();
   });
 
   it("shows the empty state when there are no open mistakes", () => {
@@ -79,5 +80,16 @@ describe("MistakeList", () => {
     mockQueries([OPEN_MISTAKE], []);
     render(<MistakeList userId={"user1" as never} titleByTopicId={{ topic1: "Closures" }} />);
     expect(screen.getByText("Closures")).toBeInTheDocument();
+  });
+
+  it("links each open mistake to a practice session for its own topic, and not resolved ones", () => {
+    mockQueries(
+      [OPEN_MISTAKE, { ...OPEN_MISTAKE, _id: "m2", topicId: "topic2", description: "Missing await" }],
+      [{ ...OPEN_MISTAKE, _id: "m3", topicId: "topic3", status: "resolved", resolvedAt: Date.now() }]
+    );
+    render(<MistakeList userId={"user1" as never} titleByTopicId={{}} />);
+
+    const links = screen.getAllByRole("link", { name: /Practice this/ });
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/practice/topic1", "/practice/topic2"]);
   });
 });

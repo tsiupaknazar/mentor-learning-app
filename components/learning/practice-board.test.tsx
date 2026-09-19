@@ -104,4 +104,39 @@ describe("PracticeBoard", () => {
     await new Promise((r) => setTimeout(r, 10));
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  describe("locked topics", () => {
+    const LOCKED_B = { ...TOPIC_B, locked: true };
+
+    it("spends the auto-generated batch on topics the learner can start, not locked ones", async () => {
+      mockQueries({ path: {}, topics: [LOCKED_B, TOPIC_A] }, []);
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string);
+      expect(body.topicIds).toEqual(["topicA"]);
+    });
+
+    it("falls back to every topic rather than generating nothing if all of them are locked", async () => {
+      mockQueries({ path: {}, topics: [{ ...TOPIC_A, locked: true }, LOCKED_B] }, []);
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string);
+      expect(body.topicIds).toEqual(["topicA", "topicB"]);
+    });
+
+    it("labels locked topics in the topic filter", async () => {
+      mockQueries({ path: {}, topics: [TOPIC_A, LOCKED_B] }, [problem({})]);
+      const user = userEvent.setup();
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      await user.click(screen.getByRole("combobox"));
+
+      expect(await screen.findByRole("option", { name: "Loops · Locked" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Closures" })).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+    });
+  });
 });

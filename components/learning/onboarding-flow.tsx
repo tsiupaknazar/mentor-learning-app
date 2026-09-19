@@ -3,17 +3,15 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { DiagnosticSet, KnowledgeProfile } from "@/lib/schemas";
 import type { DailyTime, LearningGoal, LearningStyle, Locale, SkillLevel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -21,7 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { LoadingSteps } from "@/components/learning/loading-steps";
+import {
+  DiagnosticQuestions,
+  diagnosticAnswerPayload,
+} from "@/components/learning/diagnostic-questions";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { track } from "@/lib/analytics/track";
 import { cn } from "@/lib/utils";
@@ -60,6 +62,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
 
   const [step, setStep] = useState<Step>("form");
   const [error, setError] = useState<string | null>(null);
+  const [showPreferences, setShowPreferences] = useState(false);
 
   const [goal, setGoal] = useState<LearningGoal>("improve_skills");
   const [level, setLevel] = useState<SkillLevel | "not_sure">("beginner");
@@ -70,6 +73,9 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticSet | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  // The level/profile the path is being generated from - kept so that if path
+  // generation fails, "Try again" retries it without redoing the diagnostic.
+  const [pendingFinish, setPendingFinish] = useState<{ level: SkillLevel; profile: KnowledgeProfile | null } | null>(null);
 
   const resolvedTopic = topicChoice === CUSTOM_TOPIC_SENTINEL ? customTopic.trim() : topicChoice;
 
@@ -91,10 +97,11 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
         if (!res.ok) throw new Error(t.onboarding.couldNotGenerateDiagnostic);
         const data = await res.json();
         setDiagnostic(data.diagnostic as DiagnosticSet);
+        setAnswers({});
         setStep("diagnostic");
       } catch (e) {
         setError(e instanceof Error ? e.message : t.onboarding.genericError);
-        setStep("error");
+        setStep("form");
       }
       return;
     }
@@ -107,12 +114,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
     setStep("scoring_diagnostic");
     setError(null);
     try {
-      const payload = diagnostic.questions.map((q) => ({
-        prompt: q.prompt,
-        type: q.type,
-        subtopic: q.subtopic,
-        answer: answers[q.id] ?? "(no answer given)",
-      }));
+      const payload = diagnosticAnswerPayload(diagnostic, answers);
       const res = await fetch("/api/diagnostic/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,12 +125,16 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
       const profile = data.profile as KnowledgeProfile;
       await finishOnboarding(profile.suggestedLevel, profile);
     } catch (e) {
+      // Scoring failed: the learner's answers are still in state, so send
+      // them back to the questions (Submit is the retry) rather than to a
+      // blank form that would regenerate different questions.
       setError(e instanceof Error ? e.message : t.onboarding.genericError);
-      setStep("error");
+      setStep("diagnostic");
     }
   }
 
   async function finishOnboarding(resolvedLevel: SkillLevel, profile: KnowledgeProfile | null) {
+    setPendingFinish({ level: resolvedLevel, profile });
     setStep("generating_path");
     setError(null);
     try {
@@ -184,95 +190,49 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
   );
 
   if (step === "loading_diagnostic" || step === "scoring_diagnostic" || step === "generating_path") {
-    const label =
+    const messages =
       step === "loading_diagnostic"
-        ? t.onboarding.buildingDiagnostic
+        ? [t.onboarding.buildingDiagnostic, ...t.onboarding.diagnosticSteps]
         : step === "scoring_diagnostic"
-          ? t.onboarding.scoringAnswers
-          : t.onboarding.generatingPath;
-    return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-accent" aria-hidden />
-        <p className="font-mono text-sm text-muted-foreground">{label}</p>
-      </div>
-    );
+          ? [t.onboarding.scoringAnswers, ...t.onboarding.scoringSteps]
+          : [t.onboarding.generatingPath, ...t.onboarding.pathSteps];
+    return <LoadingSteps key={step} messages={messages} />;
   }
 
   if (step === "diagnostic" && diagnostic) {
-    const answeredCount = diagnostic.questions.filter((q) => (answers[q.id] ?? "").trim().length > 0).length;
-    const subtopicCount = new Set(diagnostic.questions.map((q) => q.subtopic)).size;
-
     return (
-      <div className="space-y-6">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-accent">
-            {t.onboarding.diagnosticFor} — {resolvedTopic}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold">{t.onboarding.diagnosticTitle}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.onboarding.diagnosticSubtitle(diagnostic.questions.length, subtopicCount)}
-          </p>
-          <div className="mt-3 flex items-center gap-3">
-            <Progress
-              value={(answeredCount / diagnostic.questions.length) * 100}
-              className="h-1.5 flex-1"
-            />
-            <span className="font-mono-tabular text-xs text-muted-foreground">
-              {answeredCount} / {diagnostic.questions.length}
-            </span>
-          </div>
+      <DiagnosticQuestions
+        className=""
+        diagnostic={diagnostic}
+        topic={resolvedTopic}
+        answers={answers}
+        onAnswer={(id, value) => setAnswers((prev) => ({ ...prev, [id]: value }))}
+        onSubmit={handleSubmitDiagnostic}
+        error={error}
+      />
+    );
+  }
+
+  // Path generation failed after the level was settled: retry just that.
+  if (step === "error" && pendingFinish) {
+    return (
+      <div className="space-y-4 py-16 text-center">
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+        <div className="flex justify-center gap-3">
+          <Button variant="outline" onClick={() => setStep("form")}>
+            {t.common.back}
+          </Button>
+          <Button onClick={() => finishOnboarding(pendingFinish.level, pendingFinish.profile)}>{t.common.tryAgain}</Button>
         </div>
-
-        {diagnostic.questions.map((q, i) => (
-          <Card key={q.id}>
-            <CardHeader>
-              <CardTitle className="font-mono text-xs text-muted-foreground">
-                Q{i + 1} · {q.subtopic}
-              </CardTitle>
-              <CardDescription className="text-sm text-foreground/90">{q.prompt}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {q.codeSnippet && (
-                <pre className="scrollbar-thin overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs">
-                  {q.codeSnippet}
-                </pre>
-              )}
-              {q.choices && q.choices.length > 0 ? (
-                <div className="grid gap-2">
-                  {q.choices.map((choice) => (
-                    <button
-                      key={choice}
-                      type="button"
-                      onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: choice }))}
-                      className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                        answers[q.id] === choice
-                          ? "border-accent bg-accent/10 text-foreground"
-                          : "border-border bg-surface hover:bg-muted"
-                      }`}
-                    >
-                      {choice}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <Textarea
-                  placeholder={t.onboarding.questionAnswerPlaceholder}
-                  value={answers[q.id] ?? ""}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                  rows={3}
-                />
-              )}
-            </CardContent>
-          </Card>
-        ))}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button onClick={handleSubmitDiagnostic} className="w-full">
-          {t.onboarding.submitDiagnostic}
-        </Button>
       </div>
     );
   }
+
+  const labelOf = <T extends string>(options: { value: T; label: string }[], value: T) =>
+    options.find((o) => o.value === value)?.label ?? value;
+  const preferencesSummary = [labelOf(GOALS, goal), labelOf(STYLES, style), labelOf(TIMES, time)].join(" \u00b7 ");
 
   return (
     <div className="space-y-8">
@@ -282,38 +242,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
         <h1 className="mt-1 text-2xl font-semibold">{t.onboarding.title}</h1>
       </div>
 
-      <div className="space-y-2">
-        <Label>{t.onboarding.goalLabel}</Label>
-        <Select value={goal} onValueChange={(v) => setGoal(v as LearningGoal)}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {GOALS.map((g) => (
-              <SelectItem key={g.value} value={g.value}>
-                {g.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label>{t.onboarding.levelLabel}</Label>
-        <Select value={level} onValueChange={(v) => setLevel(v as SkillLevel | "not_sure")}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {LEVELS.map((l) => (
-              <SelectItem key={l.value} value={l.value}>
-                {l.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
+      {/* What actually shapes the path comes first: the topic and where the learner starts. */}
       <div className="space-y-2">
         <Label>{t.onboarding.topicLabel}</Label>
         <Select value={topicChoice} onValueChange={setTopicChoice}>
@@ -338,38 +267,99 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
       </div>
 
       <div className="space-y-2">
-        <Label>{t.onboarding.styleLabel}</Label>
-        <Select value={style} onValueChange={(v) => setStyle(v as LearningStyle)}>
+        <Label>{t.onboarding.levelLabel}</Label>
+        <Select value={level} onValueChange={(v) => setLevel(v as SkillLevel | "not_sure")}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {STYLES.map((s) => (
-              <SelectItem key={s.value} value={s.value}>
-                {s.label}
+            {LEVELS.map((l) => (
+              <SelectItem key={l.value} value={l.value}>
+                {l.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="space-y-2">
-        <Label>{t.onboarding.timeLabel}</Label>
-        <Select value={time} onValueChange={(v) => setTime(v as DailyTime)}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {TIMES.map((tm) => (
-              <SelectItem key={tm.value} value={tm.value}>
-                {tm.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Goal / style / time have sensible defaults - out of the way, but one click from changing. */}
+      <div className="rounded-lg border border-border">
+        <button
+          type="button"
+          onClick={() => setShowPreferences((v) => !v)}
+          aria-expanded={showPreferences}
+          aria-controls="onboarding-preferences"
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        >
+          <span>
+            <span className="block text-sm font-medium">{t.onboarding.personalize}</span>
+            <span className="block text-xs text-muted-foreground">
+              {showPreferences ? t.onboarding.personalizeHint : preferencesSummary}
+            </span>
+          </span>
+          <ChevronDown
+            className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", showPreferences && "rotate-180")}
+            aria-hidden
+          />
+        </button>
+        {showPreferences && (
+          <div id="onboarding-preferences" className="space-y-6 border-t border-border p-4">
+            <div className="space-y-2">
+              <Label>{t.onboarding.goalLabel}</Label>
+              <Select value={goal} onValueChange={(v) => setGoal(v as LearningGoal)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {GOALS.map((g) => (
+                    <SelectItem key={g.value} value={g.value}>
+                      {g.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t.onboarding.styleLabel}</Label>
+              <Select value={style} onValueChange={(v) => setStyle(v as LearningStyle)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STYLES.map((st) => (
+                    <SelectItem key={st.value} value={st.value}>
+                      {st.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t.onboarding.timeLabel}</Label>
+              <Select value={time} onValueChange={(v) => setTime(v as DailyTime)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMES.map((tm) => (
+                    <SelectItem key={tm.value} value={tm.value}>
+                      {tm.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
       <Button onClick={handleStartLearning} className="w-full" size="lg">
         {level === "not_sure" ? t.onboarding.startDiagnostic : t.onboarding.generatePath}
       </Button>

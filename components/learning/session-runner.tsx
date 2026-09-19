@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
-import { ArrowRight, Loader2, Lightbulb, Sparkles, BookOpen } from "lucide-react";
+import { ArrowRight, Lightbulb, BookOpen } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { ClientExercise, ExerciseType } from "@/types/domain";
+import type { AttemptReward, ClientExercise, ExerciseType } from "@/types/domain";
 import type { Concept, Evaluation, Hint } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,9 +15,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { CodeEditor } from "@/components/learning/code-editor";
 import { ReadOnlyCode } from "@/components/learning/read-only-code";
 import { ConceptPanel } from "@/components/learning/concept-panel";
-import { FeedbackPanel } from "@/components/learning/feedback-panel";
+import { FeedbackPanel, RewardStrip } from "@/components/learning/feedback-panel";
+import { SessionSummary } from "@/components/learning/session-summary";
+import { LoadingSteps } from "@/components/learning/loading-steps";
+import { ChoiceList } from "@/components/learning/choice-list";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { track } from "@/lib/analytics/track";
+import { SESSION_TTL_MS, useDraft } from "@/lib/drafts";
+import { EMPTY_ROUND_LOG, recordAttemptInLog, type RoundLog } from "@/lib/round-log";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 
 interface SessionRunnerProps {
@@ -61,6 +66,25 @@ type Phase =
 
 const HINT_LEVELS: Hint["level"][] = ["direction", "specific_problem", "strong_hint"];
 const EXERCISES_PER_SESSION = 5;
+const SUBMIT_SHORTCUT_HINT = "Ctrl/⌘ + Enter";
+
+/**
+ * What's persisted so a refresh or closed tab can pick a practice session
+ * back up. `exercise` is null between exercises (after feedback, before the
+ * next one is generated) - resuming then just fetches the next exercise.
+ */
+interface SessionSnapshot {
+  sessionId: string;
+  completedCount: number;
+  exercise: ClientExercise | null;
+  exerciseId: string | null;
+  answer: string;
+  hints: Hint[];
+  solutionRevealed: boolean;
+  challengeMode: boolean;
+  /** Absent in snapshots saved before the round summary existed. */
+  log?: RoundLog;
+}
 
 /**
  * Exercise types where the learner writes or edits code — the code editor's
@@ -106,6 +130,12 @@ export function SessionRunner({
   const resolvedBackLabel = backLabel ?? (mode === "practice" ? t.session.backToPractice : t.session.backToDashboard);
   const isPractice = mode === "practice";
   const startSession = useMutation(api.sessions.startSession);
+  const {
+    ready: snapshotReady,
+    draft: snapshot,
+    save: saveSnapshot,
+    clear: clearSnapshot,
+  } = useDraft<SessionSnapshot>(`session:${mode}:${topicId}`, SESSION_TTL_MS);
 
   const [phase, setPhase] = useState<Phase>("intro");
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +154,82 @@ export function SessionRunner({
   const [challengeMode, setChallengeMode] = useState(false);
 
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+  const [reward, setReward] = useState<AttemptReward | null>(null);
+  const [log, setLog] = useState<RoundLog>(EMPTY_ROUND_LOG);
+  const [hintError, setHintError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    if (phase === "exercise" && exercise && exerciseId) {
+      saveSnapshot({
+        sessionId,
+        completedCount,
+        exercise,
+        exerciseId,
+        answer,
+        hints: visibleHints,
+        solutionRevealed,
+        challengeMode,
+        log,
+      });
+    } else if (phase === "feedback") {
+      // The attempt is recorded server-side; what's left to resume is the
+      // *next* exercise, so bank this one as completed and drop its content.
+      const done = completedCount + 1;
+      if (done >= EXERCISES_PER_SESSION) {
+        clearSnapshot();
+      } else {
+        saveSnapshot({
+          sessionId,
+          completedCount: done,
+          exercise: null,
+          exerciseId: null,
+          answer: "",
+          hints: [],
+          solutionRevealed: false,
+          challengeMode: false,
+          log,
+        });
+      }
+    } else if (phase === "complete") {
+      clearSnapshot();
+    }
+  }, [
+    phase,
+    sessionId,
+    exercise,
+    exerciseId,
+    completedCount,
+    answer,
+    visibleHints,
+    solutionRevealed,
+    challengeMode,
+    log,
+    saveSnapshot,
+    clearSnapshot,
+  ]);
+
+  async function handleResume(saved: SessionSnapshot) {
+    setSessionId(saved.sessionId as Id<"sessions">);
+    setCompletedCount(saved.completedCount);
+    setChallengeMode(saved.challengeMode);
+    setLog(saved.log ?? EMPTY_ROUND_LOG);
+    setReward(null);
+    if (saved.exercise && saved.exerciseId) {
+      setExercise(saved.exercise);
+      setExerciseId(saved.exerciseId as Id<"exercises">);
+      setAnswer(saved.answer);
+      setVisibleHints(saved.hints);
+      setHintsUsed(saved.hints.length);
+      setSolutionRevealed(saved.solutionRevealed);
+      setShowTheory(false);
+      setEvaluation(null);
+      setError(null);
+      setPhase("exercise");
+    } else {
+      await fetchExercise(saved.sessionId as Id<"sessions">, saved.challengeMode);
+    }
+  }
 
   async function fetchExercise(sid: Id<"sessions">, challenge = false) {
     setPhase("loading_exercise");
@@ -134,6 +240,8 @@ export function SessionRunner({
     setSolutionRevealed(false);
     setShowTheory(false);
     setEvaluation(null);
+    setReward(null);
+    setHintError(null);
     try {
       const res = await fetch("/api/exercise", {
         method: "POST",
@@ -178,6 +286,12 @@ export function SessionRunner({
 
   async function beginPractice() {
     setPhase("loading_exercise");
+    // Every call starts a fresh session (also "Another round"), so the
+    // per-session counters must start over too - otherwise round 2 would
+    // finish after a single exercise.
+    setCompletedCount(0);
+    setChallengeMode(false);
+    setLog(EMPTY_ROUND_LOG);
     try {
       const sid = await startSession({
         userId,
@@ -197,6 +311,7 @@ export function SessionRunner({
     if (!exerciseId || hintsUsed >= HINT_LEVELS.length) return;
     const level = HINT_LEVELS[hintsUsed];
     if (!level) return;
+    setHintError(null);
     try {
       const res = await fetch("/api/hint", {
         method: "POST",
@@ -208,7 +323,9 @@ export function SessionRunner({
       setVisibleHints((prev) => [...prev, data.hint as Hint]);
       setHintsUsed((n) => n + 1);
     } catch {
-      // Non-fatal — the learner can just keep working without the hint.
+      // Non-fatal (they can keep working), but say so - a button that
+      // silently does nothing reads as broken.
+      setHintError(t.session.couldNotGetHint);
     }
   }
 
@@ -231,7 +348,18 @@ export function SessionRunner({
       if (!res.ok) throw new Error(t.session.couldNotEvaluate);
       const data = await res.json();
       const result = data.evaluation as Evaluation;
+      const earned = (data.reward as AttemptReward | undefined) ?? null;
       setEvaluation(result);
+      setReward(earned);
+      setLog((prev) =>
+        recordAttemptInLog(prev, {
+          exerciseId,
+          title: exercise?.title ?? "",
+          result: result.result,
+          reward: earned,
+          misconception: result.detectedMisconception,
+        })
+      );
       setPhase("feedback");
 
       track("exercise_submitted", {
@@ -245,8 +373,23 @@ export function SessionRunner({
         mode,
       });
     } catch (e) {
+      // Not the generic error screen: its "Try again" generates a brand-new
+      // exercise, which would discard the learner's answer and hints. Go back
+      // to the exercise (answer is restored by CodeEditor's initialCode) and
+      // let Submit act as the retry.
       setError(e instanceof Error ? e.message : t.common.somethingWentWrong);
-      setPhase("error");
+      setPhase("exercise");
+    }
+  }
+
+  // Ctrl/Cmd+Enter submits from anywhere on the exercise, including inside the
+  // code editor. Captured before CodeMirror sees it, since its own Mod-Enter
+  // binding would insert a blank line.
+  function submitOnModEnter(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && answer.trim()) {
+      e.preventDefault();
+      e.stopPropagation();
+      void handleSubmit();
     }
   }
 
@@ -281,8 +424,31 @@ export function SessionRunner({
             )}
           </CardContent>
         </Card>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button onClick={handleStart} size="lg">
+        {snapshotReady && snapshot && (
+          <Card className="border-accent/40">
+            <CardContent className="space-y-3 p-5">
+              <p className="font-mono text-xs uppercase tracking-widest text-accent">{t.session.resumeTitle}</p>
+              <p className="text-sm">{t.session.resumeDescription(snapshot.completedCount, EXERCISES_PER_SESSION)}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => handleResume(snapshot)}>
+                  {t.session.resume}
+                  <ArrowRight className="h-4 w-4" aria-hidden />
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    clearSnapshot();
+                    handleStart();
+                  }}
+                >
+                  {t.session.startOver}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <Button onClick={handleStart} size="lg" variant={snapshot ? "outline" : "default"}>
           {isPractice ? t.session.startPracticing : t.session.startSession}
           <ArrowRight className="h-4 w-4" aria-hidden />
         </Button>
@@ -291,18 +457,14 @@ export function SessionRunner({
   }
 
   if (phase === "loading_concept" || phase === "loading_exercise" || phase === "submitting") {
-    const label =
+    const messages =
       phase === "loading_concept"
-        ? t.session.preparingConcept
+        ? [t.session.preparingConcept, ...t.session.conceptSteps]
         : phase === "submitting"
-          ? t.session.reviewingAnswer
-          : t.session.preparingExercise;
-    return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-accent" aria-hidden />
-        <p className="font-mono text-sm text-muted-foreground">{label}</p>
-      </div>
-    );
+          ? [t.session.reviewingAnswer, ...t.session.reviewSteps]
+          : [t.session.preparingExercise, ...t.session.exerciseSteps];
+    // The review is the slow one: hint at its shape with a feedback skeleton.
+    return <LoadingSteps key={phase} messages={messages} skeleton={phase === "submitting"} />;
   }
 
   if (phase === "concept" && concept) {
@@ -321,7 +483,7 @@ export function SessionRunner({
   if (phase === "error") {
     return (
       <div className="space-y-4 py-16 text-center">
-        <p className="text-sm text-destructive">{error}</p>
+        <p role="alert" className="text-sm text-destructive">{error}</p>
         <Button variant="outline" onClick={() => (sessionId ? fetchExercise(sessionId) : handleStart())}>
           {t.common.tryAgain}
         </Button>
@@ -331,21 +493,14 @@ export function SessionRunner({
 
   if (phase === "complete") {
     return (
-      <div className="space-y-6 py-12 text-center">
-        <Sparkles className="mx-auto h-8 w-8 text-accent" aria-hidden />
-        <h2 className="text-xl font-semibold">{t.session.sessionComplete}</h2>
-        <p className="text-sm text-muted-foreground">
-          {t.session.exercisesReviewed(EXERCISES_PER_SESSION, topicTitle)}
-        </p>
-        <div className="flex justify-center gap-3">
-          <Button variant="outline" onClick={handleStart}>
-            {t.session.anotherRound}
-          </Button>
-          <Button asChild>
-            <a href={backHref}>{resolvedBackLabel}</a>
-          </Button>
-        </div>
-      </div>
+      <SessionSummary
+        log={log}
+        topicTitle={topicTitle}
+        exerciseCount={EXERCISES_PER_SESSION}
+        backHref={backHref}
+        backLabel={resolvedBackLabel}
+        onAnotherRound={beginPractice}
+      />
     );
   }
 
@@ -354,6 +509,7 @@ export function SessionRunner({
       <div className="space-y-6">
         <Header topicTitle={topicTitle} completedCount={completedCount} mode={mode} t={t} />
         <FeedbackPanel evaluation={evaluation} exerciseId={exerciseId ?? undefined} />
+        {reward && <RewardStrip reward={reward} />}
         <div className="flex flex-wrap gap-3">
           {evaluation.result !== "correct" && (
             <Button variant="outline" onClick={() => setPhase("exercise")}>
@@ -380,7 +536,7 @@ export function SessionRunner({
     const isMultipleChoice = exercise.type === "multiple_choice" && exercise.choices;
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" onKeyDownCapture={submitOnModEnter}>
         <Header topicTitle={topicTitle} completedCount={completedCount} mode={mode} t={t} />
 
         <Card>
@@ -423,25 +579,13 @@ export function SessionRunner({
         )}
 
         {isMultipleChoice ? (
-          <div className="grid gap-2">
-            {exercise.choices!.map((choice) => (
-              <button
-                key={choice}
-                type="button"
-                onClick={() => setAnswer(choice)}
-                className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                  answer === choice
-                    ? "border-accent bg-accent/10 text-foreground"
-                    : "border-border bg-surface hover:bg-muted"
-                }`}
-              >
-                {choice}
-              </button>
-            ))}
-          </div>
+          <ChoiceList choices={exercise.choices!} value={answer} onChange={setAnswer} label={exercise.title} />
         ) : isCodeAnswer ? (
           <CodeEditor
             starterCode={exercise.starterCode ?? "// Write your solution here\n"}
+            // Non-empty only when returning via "Revise and resubmit" — the
+            // editor unmounts during feedback and would otherwise reset.
+            initialCode={answer || undefined}
             onChange={setAnswer}
             language={exercise.language}
           />
@@ -468,7 +612,7 @@ export function SessionRunner({
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleSubmit} disabled={!answer.trim()}>
+          <Button onClick={handleSubmit} disabled={!answer.trim()} title={SUBMIT_SHORTCUT_HINT}>
             {t.session.submitAnswer}
           </Button>
           <Button
@@ -484,8 +628,10 @@ export function SessionRunner({
               {t.session.markSolutionRevealed}
             </Button>
           )}
+          {solutionRevealed && <p className="text-xs text-muted-foreground">{t.session.solutionMarked}</p>}
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {hintError && <p role="alert" className="text-sm text-destructive">{hintError}</p>}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>
     );
   }

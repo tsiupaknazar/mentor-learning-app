@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, CheckCircle2, Loader2, MinusCircle } from "lucide-react";
+import { AlertCircle, Award, CheckCircle2, Loader2, MinusCircle, TrendingUp } from "lucide-react";
 
 import type { Evaluation, MentorFollowUpReaction } from "@/lib/schemas";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { AttemptReward } from "@/types/domain";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -148,7 +149,7 @@ function MentorFollowUp({ question, exerciseId }: { question: string; exerciseId
               t.feedback.respondButton
             )}
           </Button>
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         </div>
       )}
 
@@ -192,6 +193,55 @@ function FeedbackRow({
         {label}
       </p>
       <p className="mt-0.5 text-sm leading-relaxed text-foreground/90">{text}</p>
+    </div>
+  );
+}
+
+/**
+ * Shown under the feedback so progress is visible the moment it's earned:
+ * XP, the topic's mastery movement, and any badge just unlocked. XP and
+ * mastery are computed deterministically server-side (convex/attempts.ts) -
+ * this only displays them. Renders nothing when the attempt earned no XP,
+ * moved no mastery and unlocked nothing (e.g. a wrong answer on a mastered topic).
+ */
+export function RewardStrip({ reward }: { reward: AttemptReward }) {
+  const { t } = useLocale();
+  const before = Math.round(reward.masteryBefore);
+  const after = Math.round(reward.masteryAfter);
+  const badges = reward.newAchievements
+    .map((key) => ({ key, meta: t.achievements.catalog[key as keyof typeof t.achievements.catalog] }))
+    .filter((b) => b.meta);
+
+  if (reward.xpAwarded <= 0 && before === after && badges.length === 0) return null;
+
+  return (
+    <div role="status" className="space-y-2 rounded-lg border border-border bg-surface px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+        {reward.xpAwarded > 0 && (
+          <span className="font-mono-tabular font-semibold text-accent">{t.feedback.rewardXp(reward.xpAwarded)}</span>
+        )}
+        {before !== after && (
+          <span
+            className={cn(
+              "flex items-center gap-1.5 text-xs",
+              after > before ? "text-mastery-strong" : "text-mastery-weak"
+            )}
+          >
+            <TrendingUp className={cn("h-3.5 w-3.5", after < before && "-scale-y-100")} aria-hidden />
+            {t.feedback.rewardMastery(before, after)}
+          </span>
+        )}
+      </div>
+      {badges.map(({ key, meta }) => (
+        <div key={key} className="flex items-start gap-2.5 rounded-md border border-accent/30 bg-accent/5 p-2.5">
+          <Award className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-wide text-accent">{t.feedback.rewardAchievement}</p>
+            <p className="text-sm font-semibold">{meta!.title}</p>
+            <p className="text-xs text-muted-foreground">{meta!.description}</p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

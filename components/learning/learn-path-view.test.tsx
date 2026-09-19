@@ -55,7 +55,11 @@ describe("LearnPathView", () => {
 
     expect(screen.queryByRole("link", { name: /Closures/ })).not.toBeInTheDocument();
     expect(screen.getByText("Locked")).toBeInTheDocument();
-    expect(screen.getByText("Requires: Functions")).toBeInTheDocument();
+    // The prerequisite is named by its title (never the raw id "functions")...
+    expect(screen.getByText(/Requires:/)).toBeInTheDocument();
+    expect(screen.queryByText(/\bfunctions\b/)).not.toBeInTheDocument();
+    // ...and, being startable, is a link straight to it.
+    expect(screen.getByRole("link", { name: "Functions" })).toHaveAttribute("href", "/learn/t1");
   });
 
   it("shows a mastery percentage badge for a topic with progress instead of 'not started'", () => {
@@ -76,8 +80,92 @@ describe("LearnPathView", () => {
     expect(screen.queryByText("not started")).not.toBeInTheDocument();
   });
 
+  it("renders every level of a three-level topic tree, not just root and children", () => {
+    render(
+      <LearnPathView
+        learningPathId="path1"
+        contentLocale="en"
+        path={PATH}
+        topics={[
+          topic({ _id: "root", externalId: "js", title: "JavaScript Basics", summary: "s1" }),
+          topic({ _id: "child", externalId: "fn", title: "Functions", summary: "s2", parentTopicId: "root" }),
+          topic({ _id: "grand", externalId: "clos", title: "Closures", summary: "s3", parentTopicId: "child" }),
+        ]}
+      />
+    );
+
+    expect(screen.getByRole("link", { name: /JavaScript Basics/ })).toHaveAttribute("href", "/learn/root");
+    expect(screen.getByRole("link", { name: /Functions/ })).toHaveAttribute("href", "/learn/child");
+    // Previously dropped: grandchildren were handed an empty children list.
+    expect(screen.getByRole("link", { name: /Closures/ })).toHaveAttribute("href", "/learn/grand");
+  });
+
   it("links 'Start a new topic' to /learn/new", () => {
     render(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[]} />);
     expect(screen.getByRole("link", { name: "Start a new topic" })).toHaveAttribute("href", "/learn/new");
+  });
+
+  it("does not link a prerequisite that is itself still locked", () => {
+    render(
+      <LearnPathView
+        learningPathId="path1"
+        contentLocale="en"
+        path={PATH}
+        topics={[
+          topic({ _id: "t1", externalId: "basics", title: "Basics", locked: true, prerequisiteExternalIds: ["intro"] }),
+          topic({ _id: "t2", externalId: "intro", title: "Intro", locked: false }),
+          topic({ _id: "t3", externalId: "advanced", title: "Advanced", locked: true, prerequisiteExternalIds: ["basics"] }),
+        ]}
+      />
+    );
+
+    // "Basics" is a prerequisite of Advanced, but can't be started yet: named, not linked.
+    expect(screen.queryByRole("link", { name: "Basics" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Basics").length).toBeGreaterThan(0);
+    // "Intro" is startable, so Basics' own requirement links to it.
+    expect(screen.getByRole("link", { name: "Intro" })).toHaveAttribute("href", "/learn/t2");
+  });
+
+  it("marks the suggested topic as 'Up next' - but never a locked one", () => {
+    const topics = [
+      topic({ _id: "t1", externalId: "a", title: "Alpha" }),
+      topic({ _id: "t2", externalId: "b", title: "Beta", locked: true, prerequisiteExternalIds: ["a"] }),
+    ];
+    const { rerender } = render(
+      <LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={topics} nextTopicId="t1" />
+    );
+    expect(screen.getAllByText("Up next")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: /Alpha.*Up next/ })).toBeInTheDocument();
+
+    rerender(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={topics} nextTopicId="t2" />);
+    expect(screen.queryByText("Up next")).not.toBeInTheDocument();
+
+    rerender(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={topics} />);
+    expect(screen.queryByText("Up next")).not.toBeInTheDocument();
+  });
+
+  it("shows overall progress as mastered topics out of all topics", () => {
+    const mastered = { mastery: { overall: 90 }, status: "mastered" as const, attemptsCount: 4 };
+    render(
+      <LearnPathView
+        learningPathId="path1"
+        contentLocale="en"
+        path={PATH}
+        topics={[
+          topic({ _id: "t1", externalId: "a", title: "A", progress: mastered }),
+          topic({ _id: "t2", externalId: "b", title: "B", progress: mastered }),
+          topic({ _id: "t3", externalId: "c", title: "C" }),
+          topic({ _id: "t4", externalId: "d", title: "D" }),
+        ]}
+      />
+    );
+
+    expect(screen.getByText("2 of 4 topics mastered")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "2 of 4 topics mastered" })).toBeInTheDocument();
+  });
+
+  it("shows no progress line for an empty path", () => {
+    render(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[]} />);
+    expect(screen.queryByText(/topics mastered/)).not.toBeInTheDocument();
   });
 });

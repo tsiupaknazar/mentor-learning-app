@@ -1,6 +1,6 @@
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
-import { awardStreakMilestones } from "./achievements";
+import { awardStreakMilestones, type AchievementKey } from "./achievements";
 
 /**
  * Records that `userId` did *something* substantive today (an exercise
@@ -12,14 +12,14 @@ import { awardStreakMilestones } from "./achievements";
  *
  * A no-op past the first call of the day (checked via `lastActiveDate`),
  * so it's safe to call once per attempt/submission without extra guards
- * at the call site.
+ * at the call site. Returns any streak badges newly earned by this call.
  */
-export async function recordDailyActivity(ctx: MutationCtx, userId: Id<"users">) {
+export async function recordDailyActivity(ctx: MutationCtx, userId: Id<"users">): Promise<AchievementKey[]> {
   const user = await ctx.db.get(userId);
-  if (!user) return;
+  if (!user) return [];
 
   const today = new Date().toISOString().slice(0, 10);
-  if (user.lastActiveDate === today) return; // already recorded today
+  if (user.lastActiveDate === today) return []; // already recorded today
 
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const continuesStreak = user.lastActiveDate === yesterday;
@@ -31,5 +31,5 @@ export async function recordDailyActivity(ctx: MutationCtx, userId: Id<"users">)
     longestStreak: Math.max(newStreak, user.longestStreak),
   });
 
-  await awardStreakMilestones(ctx, userId, newStreak);
+  return await awardStreakMilestones(ctx, userId, newStreak);
 }

@@ -46,6 +46,66 @@ function attemptArgs(overrides: Record<string, unknown> = {}) {
 }
 
 describe("recordAttempt", () => {
+  describe("reward reported back to the caller", () => {
+    async function setup(userOverrides: Record<string, unknown> = {}) {
+      const t = convexTest(schema);
+      const userId = await seedUser(t, userOverrides);
+      const { topicId } = await seedTopic(t, userId);
+      const exerciseId = await seedExercise(t, userId, topicId);
+      return { t, userId, topicId, exerciseId };
+    }
+
+    it("reports 100 XP, mastery before/after and the first-win badge for a clean first correct answer", async () => {
+      const { t, userId, topicId, exerciseId } = await setup();
+
+      const result = await t.mutation(api.attempts.recordAttempt, {
+        userId,
+        exerciseId,
+        topicId,
+        ...attemptArgs(),
+      });
+
+      expect(result.xpAwarded).toBe(100);
+      expect(result.masteryBefore).toBe(0);
+      expect(result.mastery.overall).toBeGreaterThan(result.masteryBefore);
+      expect(result.newAchievements).toEqual(["first_win"]);
+    });
+
+    it("reports less XP for a hinted correct answer and none for an incorrect one, and each badge only once", async () => {
+      const { t, userId, topicId, exerciseId } = await setup();
+      const args = { userId, exerciseId, topicId };
+
+      const hinted = await t.mutation(api.attempts.recordAttempt, { ...args, ...attemptArgs({ hintsUsed: 2 }) });
+      expect(hinted.xpAwarded).toBe(40);
+      expect(hinted.newAchievements).toEqual(["first_win"]);
+
+      const wrong = await t.mutation(api.attempts.recordAttempt, {
+        ...args,
+        ...attemptArgs({ result: "incorrect" as never, scores: { ...PERFECT_SCORES, correctness: 0 } }),
+      });
+      expect(wrong.xpAwarded).toBe(0);
+      expect(wrong.newAchievements).toEqual([]);
+      // masteryBefore is the topic's real previous value, not always 0.
+      expect(wrong.masteryBefore).toBe(hinted.mastery.overall);
+
+      const again = await t.mutation(api.attempts.recordAttempt, { ...args, ...attemptArgs() });
+      expect(again.newAchievements).not.toContain("first_win");
+    });
+
+    it("includes the XP-milestone badge when this attempt's XP crosses 500", async () => {
+      const { t, userId, topicId, exerciseId } = await setup({ totalXp: 450, totalCorrectAttempts: 5 });
+
+      const result = await t.mutation(api.attempts.recordAttempt, {
+        userId,
+        exerciseId,
+        topicId,
+        ...attemptArgs(),
+      });
+
+      expect(result.newAchievements).toContain("xp_500");
+    });
+  });
+
   it("creates a topicProgress row and marks it in_progress on a first correct attempt below the mastery threshold", async () => {
     const t = convexTest(schema);
     const userId = await seedUser(t);

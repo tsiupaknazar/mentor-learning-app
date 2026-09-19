@@ -7,6 +7,7 @@ import type { TranslatedLearningPath } from "@/lib/schemas";
 import type { Locale } from "@/types/domain";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import { cn, formatMastery, masteryBand } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useContentTranslation } from "@/lib/i18n/use-content-translation";
@@ -30,16 +31,30 @@ export type LearnTopicRow = {
   } | null;
 };
 
+/** Everything a node needs from the whole tree, so it can recurse without a growing prop list. */
+interface TreeContext {
+  /** Resolves a topic's direct children, so the tree renders to any depth (paths go 3 levels deep). */
+  childrenOf: (id: string) => LearnTopicRow[];
+  translatedByExternalId: Map<string, { title: string; summary: string }>;
+  /** Display title (translated when available) by externalId, for naming prerequisites. */
+  displayTitleByExternalId: Map<string, string>;
+  rowByExternalId: Map<string, LearnTopicRow>;
+  /** The topic the dashboard would suggest next, if any. */
+  nextTopicId: string | null;
+}
+
 export function LearnPathView({
   learningPathId,
   contentLocale,
   path,
   topics,
+  nextTopicId = null,
 }: {
   learningPathId: string;
   contentLocale: Locale | undefined;
   path: { title: string; rationale: string };
   topics: LearnTopicRow[];
+  nextTopicId?: string | null;
 }) {
   const { t } = useLocale();
   const translated = useContentTranslation<TranslatedLearningPath>(
@@ -53,16 +68,21 @@ export function LearnPathView({
   const title = translated?.title ?? path.title;
   const rationale = translated?.rationale ?? path.rationale;
 
-  // Display title per topic (translated when available) keyed by
-  // externalId, so a locked topic's "Requires: ..." list can name its
-  // prerequisites in the learner's own language rather than raw ids.
-  const displayTitleByExternalId = new Map(
-    topics.map((tp) => [tp.externalId, translatedByExternalId.get(tp.externalId)?.title ?? tp.title])
-  );
-
   const roots = topics.filter((tp) => !tp.parentTopicId).sort((a, b) => a.orderIndex - b.orderIndex);
   const childrenOf = (id: string) =>
     topics.filter((tp) => tp.parentTopicId === id).sort((a, b) => a.orderIndex - b.orderIndex);
+
+  const ctx: TreeContext = {
+    childrenOf,
+    translatedByExternalId,
+    displayTitleByExternalId: new Map(
+      topics.map((tp) => [tp.externalId, translatedByExternalId.get(tp.externalId)?.title ?? tp.title])
+    ),
+    rowByExternalId: new Map(topics.map((tp) => [tp.externalId, tp])),
+    nextTopicId,
+  };
+
+  const masteredCount = topics.filter((tp) => tp.progress?.status === "mastered").length;
 
   return (
     <div className="space-y-6">
@@ -79,72 +99,71 @@ export function LearnPathView({
         </Link>
       </div>
 
+      {topics.length > 0 && (
+        <div className="space-y-1.5">
+          <Progress
+            value={(masteredCount / topics.length) * 100}
+            className="h-1.5"
+            aria-label={t.learn.topicsMastered(masteredCount, topics.length)}
+          />
+          <p className="font-mono-tabular text-xs text-muted-foreground">
+            {t.learn.topicsMastered(masteredCount, topics.length)}
+          </p>
+        </div>
+      )}
+
       <div className="space-y-3">
         {roots.map((topic) => (
-          <TopicNode
-            key={topic._id}
-            topic={topic}
-            childTopics={childrenOf(topic._id)}
-            depth={0}
-            notStartedLabel={t.learn.notStarted}
-            lockedLabel={t.learn.locked}
-            lockedRequires={t.learn.lockedRequires}
-            translatedByExternalId={translatedByExternalId}
-            displayTitleByExternalId={displayTitleByExternalId}
-          />
+          <TopicNode key={topic._id} topic={topic} ctx={ctx} />
         ))}
       </div>
     </div>
   );
 }
 
-function TopicNode({
-  topic,
-  childTopics,
-  depth,
-  notStartedLabel,
-  lockedLabel,
-  lockedRequires,
-  translatedByExternalId,
-  displayTitleByExternalId,
-}: {
-  topic: LearnTopicRow;
-  childTopics: LearnTopicRow[];
-  depth: number;
-  notStartedLabel: string;
-  lockedLabel: string;
-  lockedRequires: (titles: string) => string;
-  translatedByExternalId: Map<string, { title: string; summary: string }>;
-  displayTitleByExternalId: Map<string, string>;
-}) {
+function TopicNode({ topic, ctx }: { topic: LearnTopicRow; ctx: TreeContext }) {
+  const { t } = useLocale();
   const mastery = topic.progress?.mastery.overall ?? 0;
   const band = masteryBand(mastery);
   const status = topic.progress?.status ?? "not_started";
-  const tr = translatedByExternalId.get(topic.externalId);
+  const tr = ctx.translatedByExternalId.get(topic.externalId);
   const title = tr?.title ?? topic.title;
   const summary = tr?.summary ?? topic.summary;
+  const isNext = !topic.locked && topic._id === ctx.nextTopicId;
+  const childTopics = ctx.childrenOf(topic._id);
 
-  const requiresText = topic.locked
-    ? lockedRequires(
-        topic.prerequisiteExternalIds.map((id) => displayTitleByExternalId.get(id) ?? id).join(", ")
-      )
-    : null;
+  // A locked topic names what unlocks it - and links to each prerequisite that
+  // can itself be started, so the way forward is one click, not a hunt.
+  const prerequisites = topic.locked
+    ? topic.prerequisiteExternalIds.map((id) => ({
+        id,
+        title: ctx.displayTitleByExternalId.get(id) ?? id,
+        row: ctx.rowByExternalId.get(id),
+      }))
+    : [];
 
   const cardBody = (
-    <Card className={cn("transition-colors", topic.locked ? "opacity-60" : "hover:border-accent/50")}>
+    <Card
+      className={cn(
+        "transition-colors",
+        topic.locked ? "opacity-60" : "hover:border-accent/50",
+        isNext && "border-accent/60"
+      )}
+    >
       <CardContent className="flex items-center justify-between gap-4 p-4">
         <div>
           <p className="flex items-center gap-1.5 text-sm font-medium">
             {topic.locked && <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />}
             {title}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{topic.locked ? requiresText : summary}</p>
+          {!topic.locked && <p className="mt-0.5 text-xs text-muted-foreground">{summary}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isNext && <Badge variant="default">{t.learn.upNext}</Badge>}
           {topic.locked ? (
-            <Badge variant="outline">{lockedLabel}</Badge>
+            <Badge variant="outline">{t.learn.locked}</Badge>
           ) : status === "not_started" ? (
-            <Badge variant="outline">{notStartedLabel}</Badge>
+            <Badge variant="outline">{t.learn.notStarted}</Badge>
           ) : (
             <Badge variant={band}>{formatMastery(mastery)}</Badge>
           )}
@@ -154,26 +173,33 @@ function TopicNode({
   );
 
   return (
-    <div style={{ marginLeft: depth * 20 }}>
+    <div>
       {topic.locked ? (
-        <div aria-disabled="true">{cardBody}</div>
+        <div aria-disabled="true">
+          {cardBody}
+          <p className="mt-1 pl-4 text-xs text-muted-foreground">
+            {t.learn.lockedRequiresLabel}{" "}
+            {prerequisites.map((pre, i) => (
+              <span key={pre.id}>
+                {i > 0 && ", "}
+                {pre.row && !pre.row.locked ? (
+                  <Link href={`/learn/${pre.row._id}`} className="text-accent underline underline-offset-4">
+                    {pre.title}
+                  </Link>
+                ) : (
+                  pre.title
+                )}
+              </span>
+            ))}
+          </p>
+        </div>
       ) : (
         <Link href={`/learn/${topic._id}`}>{cardBody}</Link>
       )}
       {childTopics.length > 0 && (
         <div className="mt-2 space-y-2 border-l border-border pl-3">
           {childTopics.map((c) => (
-            <TopicNode
-              key={c._id}
-              topic={c}
-              childTopics={[]}
-              depth={0}
-              notStartedLabel={notStartedLabel}
-              lockedLabel={lockedLabel}
-              lockedRequires={lockedRequires}
-              translatedByExternalId={translatedByExternalId}
-              displayTitleByExternalId={displayTitleByExternalId}
-            />
+            <TopicNode key={c._id} topic={c} ctx={ctx} />
           ))}
         </div>
       )}

@@ -12,6 +12,7 @@ import { handleRouteError } from "@/lib/route-utils";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Exercise } from "@/lib/schemas";
+import type { AttemptReward } from "@/types/domain";
 
 const requestSchema = z.object({
   exerciseId: z.string().min(1),
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
       tier: "reasoning",
     });
 
-    const { mastery } = await convexMutation(api.attempts.recordAttempt, {
+    const attempt = await convexMutation(api.attempts.recordAttempt, {
       userId: user._id,
       exerciseId,
       topicId: exerciseRow.topicId,
@@ -89,14 +90,24 @@ export async function POST(req: Request) {
       contentLocale: user.locale ?? "en",
     });
 
-    await convexMutation(api.users.recordActivity, { userId: user._id });
+    const streakAchievements = await convexMutation(api.users.recordActivity, { userId: user._id });
     if (body.sessionId) {
       await convexMutation(api.sessions.incrementSessionProgress, {
         sessionId: body.sessionId as Id<"sessions">,
       });
     }
 
-    return NextResponse.json({ evaluation, mastery });
+    // Convex and Next.js deploy separately, so for a moment this can run
+    // against a backend that predates the reward fields - degrade to "nothing
+    // earned" (the strip hides itself) rather than showing NaN.
+    const reward: AttemptReward = {
+      xpAwarded: attempt.xpAwarded ?? 0,
+      masteryBefore: attempt.masteryBefore ?? attempt.mastery.overall,
+      masteryAfter: attempt.mastery.overall,
+      newAchievements: [...(attempt.newAchievements ?? []), ...(streakAchievements ?? [])],
+    };
+
+    return NextResponse.json({ evaluation, mastery: attempt.mastery, reward });
   } catch (err) {
     return handleRouteError(err);
   }

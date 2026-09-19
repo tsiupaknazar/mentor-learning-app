@@ -91,6 +91,18 @@ export interface ClientExercise {
   contentLocale?: Locale;
 }
 
+/**
+ * What one evaluated attempt earned, as returned by `/api/evaluate` - shown
+ * under the feedback so progress is visible right when it happens.
+ * `newAchievements` are keys into the dictionaries' `achievements.catalog`.
+ */
+export interface AttemptReward {
+  xpAwarded: number;
+  masteryBefore: number;
+  masteryAfter: number;
+  newAchievements: string[];
+}
+
 export interface MasteryScore {
   knowledge: number;
   application: number;

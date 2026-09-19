@@ -93,7 +93,8 @@ export const completeOnboarding = mutation({
 export const recordActivity = mutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    await recordDailyActivity(ctx, args.userId);
+    // Streak badges newly earned by this activity (usually none).
+    return await recordDailyActivity(ctx, args.userId);
   },
 });
 

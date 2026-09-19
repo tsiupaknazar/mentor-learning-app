@@ -83,6 +83,40 @@ describe("getTaskDetail starting files", () => {
   });
 });
 
+describe("getTaskDetail nextTask", () => {
+  it("points at the following task, and at nothing after the last one", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { tasks } = await createProjectWithTasks(t, userId);
+
+    const first = await t.query(api.projects.getTaskDetail, { taskId: tasks[0]!._id });
+    expect(first?.nextTask).toEqual({ _id: tasks[1]!._id, taskCode: "FE-102", title: "Styling" });
+
+    const last = await t.query(api.projects.getTaskDetail, { taskId: tasks[1]!._id });
+    expect(last?.nextTask).toBeNull();
+  });
+
+  it("skips tasks that are already done", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const projectId = await t.mutation(api.projects.createProject, {
+      userId,
+      ...projectArgs({
+        tasks: [
+          { taskCode: "FE-101", title: "One", requirements: ["a"] },
+          { taskCode: "FE-102", title: "Two", requirements: ["b"] },
+          { taskCode: "FE-103", title: "Three", requirements: ["c"] },
+        ],
+      }),
+    });
+    const { tasks } = (await t.query(api.projects.getProjectDetail, { projectId }))!;
+    await t.run((ctx) => ctx.db.patch(tasks[1]!._id, { status: "done" }));
+
+    const detail = await t.query(api.projects.getTaskDetail, { taskId: tasks[0]!._id });
+    expect(detail?.nextTask?.taskCode).toBe("FE-103");
+  });
+});
+
 describe("recordSubmissionAndReview", () => {
   it("marks the task changes_requested on a changes_requested verdict, without advancing project files", async () => {
     const t = convexTest(schema);

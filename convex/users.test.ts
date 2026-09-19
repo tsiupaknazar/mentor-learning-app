@@ -89,6 +89,17 @@ describe("awardXp", () => {
 });
 
 describe("recordActivity (daily streak)", () => {
+  it("returns the streak badge it newly earns, and nothing on later calls", async () => {
+    const t = convexTest(schema);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-10T12:00:00Z"));
+    const userId = await seedUser(t, { currentStreak: 6, longestStreak: 6, lastActiveDate: "2024-06-09" });
+
+    expect(await t.mutation(api.users.recordActivity, { userId })).toEqual(["streak_7"]);
+    // Same day again: no-op, nothing newly earned.
+    expect(await t.mutation(api.users.recordActivity, { userId })).toEqual([]);
+  });
+
   it("starts the streak at 1 on the first-ever activity", async () => {
     const t = convexTest(schema);
     vi.useFakeTimers();

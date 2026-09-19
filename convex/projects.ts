@@ -164,7 +164,24 @@ export const getTaskDetail = query({
       language: languageByFilename.get(f.filename) ?? "javascript",
     }));
 
-    return { task, project, submissionsWithReviews, startingFiles };
+    // The first later, not-yet-done task in this project (null when this is
+    // the last open one), so finishing a ticket can lead straight into the next.
+    const projectTasks = await ctx.db
+      .query("projectTasks")
+      .withIndex("by_project", (q) => q.eq("projectId", task.projectId))
+      .collect();
+    const nextTask =
+      projectTasks
+        .filter((tk) => tk.orderIndex > task.orderIndex && tk.status !== "done")
+        .sort((a, b) => a.orderIndex - b.orderIndex)[0] ?? null;
+
+    return {
+      task,
+      project,
+      submissionsWithReviews,
+      startingFiles,
+      nextTask: nextTask ? { _id: nextTask._id, taskCode: nextTask.taskCode, title: nextTask.title } : null,
+    };
   },
 });
 

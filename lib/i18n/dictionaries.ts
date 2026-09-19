@@ -10,6 +10,8 @@ export interface Dictionary {
     tryAgain: string;
     loading: string;
     somethingWentWrong: string;
+    back: string;
+    stillWorking: string;
   };
   sidebar: {
     appName: string;
@@ -24,6 +26,8 @@ export interface Dictionary {
     settings: string;
     day: string;
     days: string;
+    openMenu: string;
+    closeMenu: string;
     language: string;
   };
   landing: {
@@ -78,6 +82,15 @@ export interface Dictionary {
     couldNotGenerateDiagnostic: string;
     couldNotScoreDiagnostic: string;
     couldNotGeneratePath: string;
+    personalize: string;
+    personalizeHint: string;
+    notSure: string;
+    unansweredWarning: (count: number) => string;
+    submitAnyway: string;
+    keepAnswering: string;
+    diagnosticSteps: string[];
+    scoringSteps: string[];
+    pathSteps: string[];
   };
   settings: {
     eyebrow: string;
@@ -110,7 +123,9 @@ export interface Dictionary {
     notStarted: string;
     startNewTopic: string;
     locked: string;
-    lockedRequires: (titles: string) => string;
+    lockedRequiresLabel: string;
+    upNext: string;
+    topicsMastered: (mastered: number, total: number) => string;
     lockedNoticeTitle: string;
     lockedNoticeBody: string;
     backToPath: string;
@@ -179,10 +194,23 @@ export interface Dictionary {
     hintLabel: (n: number) => string;
     noMoreHints: string;
     markSolutionRevealed: string;
+    solutionMarked: string;
     couldNotGenerateExercise: string;
     couldNotStartSession: string;
     couldNotEvaluate: string;
     challenge: string;
+    conceptSteps: string[];
+    exerciseSteps: string[];
+    reviewSteps: string[];
+    summaryCorrect: (correct: number, total: number) => string;
+    summaryAnswers: string;
+    summaryReview: string;
+    summaryViewMistakes: string;
+    resumeTitle: string;
+    resumeDescription: (done: number, total: number) => string;
+    resume: string;
+    startOver: string;
+    couldNotGetHint: string;
   };
   // Shared labels for exercise metadata badges (type/difficulty/hint level)
   // rendered on the Learn session, Practice board, and single-problem solve
@@ -226,6 +254,9 @@ export interface Dictionary {
     couldNotGetReaction: string;
     yourReply: string;
     mentorReaction: string;
+    rewardXp: (xp: number) => string;
+    rewardMastery: (from: number, to: number) => string;
+    rewardAchievement: string;
     scoreBreakdown: string;
     scoreLabels: Record<"correctness" | "logic" | "codeQuality" | "bestPractices" | "edgeCaseHandling", string>;
   };
@@ -246,6 +277,7 @@ export interface Dictionary {
     lastSeen: (date: string) => string;
     cleanStreak: (count: number, threshold: number) => string;
     markResolved: string;
+    practiceThis: string;
     resolving: string;
     recentlyResolved: string;
     resolvedOn: (date: string) => string;
@@ -312,6 +344,7 @@ export interface Dictionary {
   };
   taskRunner: {
     backToProject: string;
+    nextTask: (code: string, title: string) => string;
     requirements: string;
     approved: string;
     submitForReview: string;
@@ -370,6 +403,8 @@ const en: Dictionary = {
     tryAgain: "Try again",
     loading: "Loading…",
     somethingWentWrong: "Something went wrong.",
+    back: "Back",
+    stillWorking: "Still working \u2014 this can take a moment.",
   },
   sidebar: {
     appName: "unsparing",
@@ -384,6 +419,8 @@ const en: Dictionary = {
     settings: "Settings",
     day: "day",
     days: "days",
+    openMenu: "Open menu",
+    closeMenu: "Close menu",
     language: "Language",
   },
   landing: {
@@ -480,6 +517,15 @@ const en: Dictionary = {
     couldNotGenerateDiagnostic: "Could not generate the diagnostic. Try again.",
     couldNotScoreDiagnostic: "Could not score the diagnostic. Try again.",
     couldNotGeneratePath: "Could not generate your learning path. Try again.",
+    personalize: "Personalize",
+    personalizeHint: "Optional \u2014 defaults are already set",
+    notSure: "I don't know",
+    unansweredWarning: (count) => (count === 1 ? "1 question is unanswered and will count as not known." : `${count} questions are unanswered and will count as not known.`),
+    submitAnyway: "Submit anyway",
+    keepAnswering: "Keep answering",
+    diagnosticSteps: ["Choosing questions that fit the topic\u2026", "Mixing concept and code questions\u2026"],
+    scoringSteps: ["Comparing your answers\u2026", "Estimating your level\u2026"],
+    pathSteps: ["Mapping out the topics\u2026", "Ordering them by prerequisites\u2026", "Tailoring the path to your level\u2026"],
   },
   settings: {
     eyebrow: "Settings",
@@ -516,7 +562,9 @@ const en: Dictionary = {
     notStarted: "not started",
     startNewTopic: "Start a new topic",
     locked: "Locked",
-    lockedRequires: (titles) => `Requires: ${titles}`,
+    lockedRequiresLabel: "Requires:",
+    upNext: "Up next",
+    topicsMastered: (mastered, total) => `${mastered} of ${total} topics mastered`,
     lockedNoticeTitle: "This topic is locked",
     lockedNoticeBody: "You need to master its prerequisite topics before starting this one.",
     backToPath: "Back to learning path",
@@ -585,11 +633,24 @@ const en: Dictionary = {
     hint: (used, total) => `Hint (${used}/${total})`,
     hintLabel: (n) => `Hint ${n}`,
     noMoreHints: "No more hints",
-    markSolutionRevealed: "Mark solution as revealed",
+    markSolutionRevealed: "I looked up the answer (earns less XP)",
+    solutionMarked: "Noted \u2014 this attempt will earn less XP.",
     couldNotGenerateExercise: "Could not generate an exercise. Try again.",
     couldNotStartSession: "Could not start the session. Try again.",
     couldNotEvaluate: "Could not evaluate your answer. Try again.",
     challenge: "challenge",
+    conceptSteps: ["Picking the key ideas\u2026", "Writing the examples\u2026"],
+    exerciseSteps: ["Tuning the difficulty to your level\u2026", "Writing the exercise\u2026"],
+    reviewSteps: ["Checking correctness and edge cases\u2026", "Writing your feedback\u2026"],
+    summaryCorrect: (correct, total) => `${correct} of ${total} correct`,
+    summaryAnswers: "Your answers",
+    summaryReview: "Worth reviewing",
+    summaryViewMistakes: "See all mistakes",
+    resumeTitle: "Unfinished session",
+    resumeDescription: (done, total) => `You've completed ${done} of ${total} exercises \u2014 pick up where you left off.`,
+    resume: "Resume",
+    startOver: "Start over",
+    couldNotGetHint: "Could not get a hint. Try again.",
   },
   exercise: {
     typeLabels: {
@@ -642,6 +703,9 @@ const en: Dictionary = {
     couldNotGetReaction: "Could not get a reaction. Try again.",
     yourReply: "Your reply",
     mentorReaction: "Mentor",
+    rewardXp: (xp) => `+${xp} XP`,
+    rewardMastery: (from, to) => `Topic mastery ${from}% \u2192 ${to}%`,
+    rewardAchievement: "Achievement unlocked",
     scoreBreakdown: "Score breakdown",
     scoreLabels: {
       correctness: "Correctness",
@@ -675,6 +739,7 @@ const en: Dictionary = {
     lastSeen: (date) => `last seen ${date}`,
     cleanStreak: (count, threshold) => `${count}/${threshold} clean attempts since last seen`,
     markResolved: "Mark resolved",
+    practiceThis: "Practice this",
     resolving: "Resolving\u2026",
     recentlyResolved: "Recently resolved",
     resolvedOn: (date) => `Resolved ${date}`,
@@ -749,6 +814,7 @@ const en: Dictionary = {
   },
   taskRunner: {
     backToProject: "Back to project",
+    nextTask: (code, title) => `Next task: ${code} \u00b7 ${title}`,
     requirements: "Requirements",
     approved: "Approved \u2014 this task is done.",
     submitForReview: "Submit for review",
@@ -812,6 +878,8 @@ const uk: Dictionary = {
     tryAgain: "Спробувати ще раз",
     loading: "Завантаження…",
     somethingWentWrong: "Щось пішло не так.",
+    back: "Назад",
+    stillWorking: "Ще працюємо \u2014 це може зайняти трохи часу.",
   },
   sidebar: {
     appName: "unsparing",
@@ -826,6 +894,8 @@ const uk: Dictionary = {
     settings: "Налаштування",
     day: "день",
     days: "днів",
+    openMenu: "Відкрити меню",
+    closeMenu: "Закрити меню",
     language: "Мова",
   },
   landing: {
@@ -931,6 +1001,15 @@ const uk: Dictionary = {
     couldNotGenerateDiagnostic: "Не вдалося створити діагностику. Спробуйте ще раз.",
     couldNotScoreDiagnostic: "Не вдалося оцінити діагностику. Спробуйте ще раз.",
     couldNotGeneratePath: "Не вдалося створити ваш навчальний шлях. Спробуйте ще раз.",
+    personalize: "Налаштувати",
+    personalizeHint: "Необов\u2019язково \u2014 типові значення вже вибрано",
+    notSure: "Не знаю",
+    unansweredWarning: (count) => `Без відповіді: ${count}. Такі запитання буде враховано як незнайомі.`,
+    submitAnyway: "Все одно надіслати",
+    keepAnswering: "Продовжити відповідати",
+    diagnosticSteps: ["Добираємо запитання до теми\u2026", "Поєднуємо запитання про концепції та код\u2026"],
+    scoringSteps: ["Порівнюємо ваші відповіді\u2026", "Оцінюємо ваш рівень\u2026"],
+    pathSteps: ["Складаємо карту тем\u2026", "Впорядковуємо за передумовами\u2026", "Підлаштовуємо шлях під ваш рівень\u2026"],
   },
   settings: {
     eyebrow: "Налаштування",
@@ -967,7 +1046,9 @@ const uk: Dictionary = {
     notStarted: "не розпочато",
     startNewTopic: "Почати нову тему",
     locked: "Заблоковано",
-    lockedRequires: (titles) => `Потрібно спочатку: ${titles}`,
+    lockedRequiresLabel: "Потрібно спочатку:",
+    upNext: "Далі",
+    topicsMastered: (mastered, total) => `Опановано тем: ${mastered} з ${total}`,
     lockedNoticeTitle: "Ця тема заблокована",
     lockedNoticeBody: "Спочатку потрібно опанувати попередні теми, перш ніж почати цю.",
     backToPath: "Назад до навчального шляху",
@@ -1036,11 +1117,24 @@ const uk: Dictionary = {
     hint: (used, total) => `Підказка (${used}/${total})`,
     hintLabel: (n) => `Підказка ${n}`,
     noMoreHints: "Підказок більше немає",
-    markSolutionRevealed: "Позначити рішення як розкрите",
+    markSolutionRevealed: "Я підглянув(-ла) відповідь (менше XP)",
+    solutionMarked: "Враховано \u2014 за цю спробу буде менше XP.",
     couldNotGenerateExercise: "Не вдалося створити вправу. Спробуйте ще раз.",
     couldNotStartSession: "Не вдалося розпочати сесію. Спробуйте ще раз.",
     couldNotEvaluate: "Не вдалося оцінити вашу відповідь. Спробуйте ще раз.",
     challenge: "виклик",
+    conceptSteps: ["Добираємо ключові ідеї\u2026", "Пишемо приклади\u2026"],
+    exerciseSteps: ["Підлаштовуємо складність під ваш рівень\u2026", "Пишемо вправу\u2026"],
+    reviewSteps: ["Перевіряємо правильність і крайні випадки\u2026", "Пишемо відгук\u2026"],
+    summaryCorrect: (correct, total) => `${correct} з ${total} правильно`,
+    summaryAnswers: "Ваші відповіді",
+    summaryReview: "Варто повторити",
+    summaryViewMistakes: "Усі помилки",
+    resumeTitle: "Незавершена сесія",
+    resumeDescription: (done, total) => `Ви виконали ${done} з ${total} вправ \u2014 продовжте з того місця, де зупинилися.`,
+    resume: "Продовжити",
+    startOver: "Почати заново",
+    couldNotGetHint: "Не вдалося отримати підказку. Спробуйте ще раз.",
   },
   exercise: {
     typeLabels: {
@@ -1093,6 +1187,9 @@ const uk: Dictionary = {
     couldNotGetReaction: "Не вдалося отримати реакцію. Спробуйте ще раз.",
     yourReply: "Ваша відповідь",
     mentorReaction: "Ментор",
+    rewardXp: (xp) => `+${xp} XP`,
+    rewardMastery: (from, to) => `Опанування теми ${from}% \u2192 ${to}%`,
+    rewardAchievement: "Досягнення розблоковано",
     scoreBreakdown: "Розбір оцінки",
     scoreLabels: {
       correctness: "Правильність",
@@ -1126,6 +1223,7 @@ const uk: Dictionary = {
     lastSeen: (date) => `востаннє ${date}`,
     cleanStreak: (count, threshold) => `${count}/${threshold} чистих спроб з моменту останньої появи`,
     markResolved: "Позначити вирішеною",
+    practiceThis: "Потренуватися",
     resolving: "Вирішується…",
     recentlyResolved: "Нещодавно вирішені",
     resolvedOn: (date) => `Вирішено ${date}`,
@@ -1200,6 +1298,7 @@ const uk: Dictionary = {
   },
   taskRunner: {
     backToProject: "Назад до проєкту",
+    nextTask: (code, title) => `Наступне завдання: ${code} \u00b7 ${title}`,
     requirements: "Вимоги",
     approved: "Затверджено — це завдання виконано.",
     submitForReview: "Надіслати на перевірку",

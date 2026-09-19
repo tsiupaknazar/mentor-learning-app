@@ -3,19 +3,21 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { DiagnosticSet, KnowledgeProfile } from "@/lib/schemas";
 import type { DailyTime, LearningGoal, LearningStyle, SkillLevel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { LoadingSteps } from "@/components/learning/loading-steps";
+import {
+  DiagnosticQuestions,
+  diagnosticAnswerPayload,
+} from "@/components/learning/diagnostic-questions";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +56,9 @@ export function NewPathFlow({
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticSet | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  // The level/profile the path is being generated from - kept so that if path
+  // generation fails, "Try again" retries it without redoing the diagnostic.
+  const [pendingFinish, setPendingFinish] = useState<{ level: SkillLevel; profile: KnowledgeProfile | null } | null>(null);
 
   const resolvedTopic =
     topicChoice === CUSTOM_TOPIC_SENTINEL ? customTopic.trim() : topicChoice;
@@ -81,10 +86,11 @@ export function NewPathFlow({
         if (!res.ok) throw new Error(t.onboarding.couldNotGenerateDiagnostic);
         const data = await res.json();
         setDiagnostic(data.diagnostic as DiagnosticSet);
+        setAnswers({});
         setStep("diagnostic");
       } catch (e) {
         setError(e instanceof Error ? e.message : t.onboarding.genericError);
-        setStep("error");
+        setStep("form");
       }
       return;
     }
@@ -97,12 +103,7 @@ export function NewPathFlow({
     setStep("scoring_diagnostic");
     setError(null);
     try {
-      const payload = diagnostic.questions.map((q) => ({
-        prompt: q.prompt,
-        type: q.type,
-        subtopic: q.subtopic,
-        answer: answers[q.id] ?? "(no answer given)",
-      }));
+      const payload = diagnosticAnswerPayload(diagnostic, answers);
       const res = await fetch("/api/diagnostic/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,12 +114,16 @@ export function NewPathFlow({
       const profile = data.profile as KnowledgeProfile;
       await finishNewPath(profile.suggestedLevel, profile);
     } catch (e) {
+      // Scoring failed: the learner's answers are still in state, so send
+      // them back to the questions (Submit is the retry) rather than to a
+      // blank form that would regenerate different questions.
       setError(e instanceof Error ? e.message : t.onboarding.genericError);
-      setStep("error");
+      setStep("diagnostic");
     }
   }
 
   async function finishNewPath(resolvedLevel: SkillLevel, profile: KnowledgeProfile | null) {
+    setPendingFinish({ level: resolvedLevel, profile });
     setStep("generating_path");
     setError(null);
     try {
@@ -150,89 +155,42 @@ export function NewPathFlow({
   }
 
   if (step === "loading_diagnostic" || step === "scoring_diagnostic" || step === "generating_path") {
-    const label =
+    const messages =
       step === "loading_diagnostic"
-        ? t.onboarding.buildingDiagnostic
+        ? [t.onboarding.buildingDiagnostic, ...t.onboarding.diagnosticSteps]
         : step === "scoring_diagnostic"
-          ? t.onboarding.scoringAnswers
-          : t.onboarding.generatingPath;
-    return (
-      <div className="flex flex-col items-center gap-3 py-24 text-center">
-        <Loader2 className="h-6 w-6 animate-spin text-accent" aria-hidden />
-        <p className="font-mono text-sm text-muted-foreground">{label}</p>
-      </div>
-    );
+          ? [t.onboarding.scoringAnswers, ...t.onboarding.scoringSteps]
+          : [t.onboarding.generatingPath, ...t.onboarding.pathSteps];
+    return <LoadingSteps key={step} messages={messages} />;
   }
 
   if (step === "diagnostic" && diagnostic) {
-    const answeredCount = diagnostic.questions.filter((q) => (answers[q.id] ?? "").trim().length > 0).length;
-    const subtopicCount = new Set(diagnostic.questions.map((q) => q.subtopic)).size;
-
     return (
-      <div className="space-y-6 py-8">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-widest text-accent">
-            {t.onboarding.diagnosticFor} — {resolvedTopic}
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold">{t.onboarding.diagnosticTitle}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t.onboarding.diagnosticSubtitle(diagnostic.questions.length, subtopicCount)}
-          </p>
-          <div className="mt-3 flex items-center gap-3">
-            <Progress value={(answeredCount / diagnostic.questions.length) * 100} className="h-1.5 flex-1" />
-            <span className="font-mono-tabular text-xs text-muted-foreground">
-              {answeredCount} / {diagnostic.questions.length}
-            </span>
-          </div>
+      <DiagnosticQuestions
+        className="py-8"
+        diagnostic={diagnostic}
+        topic={resolvedTopic}
+        answers={answers}
+        onAnswer={(id, value) => setAnswers((prev) => ({ ...prev, [id]: value }))}
+        onSubmit={handleSubmitDiagnostic}
+        error={error}
+      />
+    );
+  }
+
+  // Path generation failed after the level was settled: retry just that.
+  if (step === "error" && pendingFinish) {
+    return (
+      <div className="space-y-4 py-16 text-center">
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+        <div className="flex justify-center gap-3">
+          <Button variant="outline" onClick={() => setStep("form")}>
+            {t.common.back}
+          </Button>
+          <Button onClick={() => finishNewPath(pendingFinish.level, pendingFinish.profile)}>{t.common.tryAgain}</Button>
         </div>
-
-        {diagnostic.questions.map((q, i) => (
-          <Card key={q.id}>
-            <CardHeader>
-              <CardTitle className="font-mono text-xs text-muted-foreground">
-                Q{i + 1} · {q.subtopic}
-              </CardTitle>
-              <CardDescription className="text-sm text-foreground/90">{q.prompt}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {q.codeSnippet && (
-                <pre className="scrollbar-thin overflow-x-auto rounded-md border border-border bg-background p-3 font-mono text-xs">
-                  {q.codeSnippet}
-                </pre>
-              )}
-              {q.choices && q.choices.length > 0 ? (
-                <div className="grid gap-2">
-                  {q.choices.map((choice) => (
-                    <button
-                      key={choice}
-                      type="button"
-                      onClick={() => setAnswers((prev) => ({ ...prev, [q.id]: choice }))}
-                      className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                        answers[q.id] === choice
-                          ? "border-accent bg-accent/10 text-foreground"
-                          : "border-border bg-surface hover:bg-muted"
-                      }`}
-                    >
-                      {choice}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <Textarea
-                  placeholder={t.onboarding.questionAnswerPlaceholder}
-                  value={answers[q.id] ?? ""}
-                  onChange={(e) => setAnswers((prev) => ({ ...prev, [q.id]: e.target.value }))}
-                  rows={3}
-                />
-              )}
-            </CardContent>
-          </Card>
-        ))}
-
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button onClick={handleSubmitDiagnostic} className="w-full">
-          {t.onboarding.submitDiagnostic}
-        </Button>
       </div>
     );
   }
@@ -313,7 +271,7 @@ export function NewPathFlow({
         </Select>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <Button onClick={handleStart} className="w-full" size="lg">
         {level === "not_sure" ? t.onboarding.startDiagnostic : t.newPath.startButton}
       </Button>

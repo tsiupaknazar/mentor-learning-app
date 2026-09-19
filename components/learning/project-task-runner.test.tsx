@@ -7,10 +7,29 @@ import { track } from "@/lib/analytics/track";
 // multi-file-editor.tsx renders CodeMirror, which is out of scope for
 // component tests (see the plan's "Out of scope" section) - stubbed so
 // this test can exercise ProjectTaskRunner's own state/logic in isolation.
-// The submit-disabled check only depends on the `startingFiles` prop, not
-// on interacting with the real editor.
+// The stub is one plain textarea per file, seeded from the `files` prop
+// (like the real editor, only on mount) and reporting edits via onChange.
 vi.mock("./multi-file-editor", () => ({
-  MultiFileEditor: () => <div data-testid="multi-file-editor-stub" />,
+  MultiFileEditor: ({
+    files,
+    onChange,
+  }: {
+    files: Array<{ filename: string; content: string }>;
+    onChange: (files: Array<{ filename: string; content: string }>) => void;
+  }) => (
+    <div data-testid="multi-file-editor-stub">
+      {files.map((f) => (
+        <textarea
+          key={f.filename}
+          aria-label={f.filename}
+          defaultValue={f.content}
+          onChange={(e) =>
+            onChange(files.map((x) => ({ filename: x.filename, content: x.filename === f.filename ? e.target.value : x.content })))
+          }
+        />
+      ))}
+    </div>
+  ),
 }));
 
 const BASE_PROPS = {
@@ -23,6 +42,7 @@ const BASE_PROPS = {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -115,5 +135,138 @@ describe("ProjectTaskRunner", () => {
       />
     );
     expect(screen.getByText("1 earlier submission")).toBeInTheDocument();
+  });
+
+  describe("draft persistence", () => {
+    const DRAFT_KEY = "unsparing:draft:project-task:task1";
+    const STARTING = [{ filename: "index.html", content: "<h1>Hi</h1>", language: "html" as const }];
+
+    it("restores unsubmitted edits over the starting files after a refresh", async () => {
+      const user = userEvent.setup();
+      const first = render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} />);
+
+      const box = screen.getByLabelText("index.html");
+      await user.clear(box);
+      await user.type(box, "<p>my edit</p>");
+
+      first.unmount(); // flushes the debounced save
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} />);
+
+      expect(await screen.findByLabelText("index.html")).toHaveValue("<p>my edit</p>");
+    });
+
+    it("does not write a draft for untouched starting files", () => {
+      const { unmount } = render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} />);
+      unmount();
+      expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+    });
+
+    it("ignores draft entries for files that are no longer part of the task", async () => {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ v: [{ filename: "gone.js", content: "old" }], t: Date.now() })
+      );
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} />);
+      expect(await screen.findByLabelText("index.html")).toHaveValue("<h1>Hi</h1>");
+    });
+
+    it("submits the restored content and drops the draft once the review succeeds", async () => {
+      localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ v: [{ filename: "index.html", content: "<p>restored</p>" }], t: Date.now() })
+      );
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(
+          JSON.stringify({ review: { verdict: "approved", summary: "Nice", comments: [] }, taskStatus: "done" }),
+          { status: 200 }
+        )
+      );
+      const user = userEvent.setup();
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} />);
+
+      await user.click(await screen.findByRole("button", { name: "Submit for review" }));
+      await screen.findByText("Nice");
+
+      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string);
+      expect(body.files).toEqual([{ filename: "index.html", content: "<p>restored</p>" }]);
+      expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+    });
+  });
+
+  describe("after a review", () => {
+    const STARTING = [{ filename: "index.html", content: "<h1>Hi</h1>", language: "html" as const }];
+    const NEXT = { _id: "task2", taskCode: "FE-102", title: "Styling" };
+
+    function reviewResponse(verdict: "approved" | "changes_requested", taskStatus: string) {
+      return new Response(
+        JSON.stringify({ review: { verdict, summary: "Reviewed", comments: [] }, taskStatus }),
+        { status: 200 }
+      );
+    }
+
+    it("offers the next task once the submission is approved", async () => {
+      vi.mocked(fetch).mockResolvedValue(reviewResponse("approved", "done"));
+      const user = userEvent.setup();
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} nextTask={NEXT} />);
+
+      expect(screen.queryByRole("link", { name: /Next task/ })).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Submit for review" }));
+
+      const link = await screen.findByRole("link", { name: /Next task: FE-102 · Styling/ });
+      expect(link).toHaveAttribute("href", "/projects/project1/tasks/task2");
+    });
+
+    it("falls back to returning to the project when there is no next task", async () => {
+      vi.mocked(fetch).mockResolvedValue(reviewResponse("approved", "done"));
+      const user = userEvent.setup();
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} nextTask={null} />);
+
+      await user.click(screen.getByRole("button", { name: "Submit for review" }));
+      await screen.findByText("Reviewed");
+
+      expect(screen.queryByRole("link", { name: /Next task/ })).not.toBeInTheDocument();
+      // The header's own back link plus the new call to action.
+      expect(screen.getAllByRole("link", { name: "Back to project" })).toHaveLength(2);
+    });
+
+    it("does not offer the next task when changes were requested", async () => {
+      vi.mocked(fetch).mockResolvedValue(reviewResponse("changes_requested", "changes_requested"));
+      const user = userEvent.setup();
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} nextTask={NEXT} />);
+
+      await user.click(screen.getByRole("button", { name: "Submit for review" }));
+      await screen.findByText("Reviewed");
+
+      expect(screen.queryByRole("link", { name: /Next task/ })).not.toBeInTheDocument();
+    });
+
+    it("scrolls the fresh review into view, but not an existing one on first load", async () => {
+      const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {});
+      vi.mocked(fetch).mockResolvedValue(reviewResponse("changes_requested", "changes_requested"));
+      const user = userEvent.setup();
+      render(
+        <ProjectTaskRunner
+          {...BASE_PROPS}
+          initialStatus="changes_requested"
+          startingFiles={STARTING}
+          pastSubmissions={[
+            {
+              id: "s1",
+              files: [],
+              submittedAt: Date.now(),
+              review: { verdict: "changes_requested", summary: "Earlier review", comments: [] },
+            },
+          ]}
+        />
+      );
+      expect(screen.getByText("Earlier review")).toBeInTheDocument();
+      expect(scrollSpy).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: /Resubmit/ }));
+      await screen.findByText("Reviewed");
+
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+      scrollSpy.mockRestore();
+    });
   });
 });

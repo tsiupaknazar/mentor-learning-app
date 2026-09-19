@@ -14,6 +14,13 @@ import { useLocale } from "@/lib/i18n/locale-context";
 
 interface CodeEditorProps {
   starterCode: string;
+  /**
+   * The learner's own earlier attempt, to restore when the editor remounts
+   * (e.g. "Revise and resubmit" after feedback). Shown instead of
+   * `starterCode`, and never auto-formatted over. "Reset" still returns to
+   * the starter code, not to this.
+   */
+  initialCode?: string;
   onChange: (code: string) => void;
   language?: ProgrammingLanguage;
   filename?: string;
@@ -31,9 +38,9 @@ const RUNNABLE_LANGUAGES = new Set<ProgrammingLanguage>(["javascript", "typescri
  * running HTML/CSS/Python/SQL through a JS eval worker doesn't mean
  * anything; HTML/CSS get a live preview instead in MultiFileEditor.
  */
-export function CodeEditor({ starterCode, onChange, language = "javascript", filename }: CodeEditorProps) {
+export function CodeEditor({ starterCode, initialCode, onChange, language = "javascript", filename }: CodeEditorProps) {
   const { t } = useLocale();
-  const [code, setCode] = useState(starterCode);
+  const [code, setCode] = useState(initialCode ?? starterCode);
   const initialCodeRef = useRef(starterCode);
   const [output, setOutput] = useState<{ lines: string[]; error: string | null } | null>(null);
   const [running, setRunning] = useState(false);
@@ -47,12 +54,15 @@ export function CodeEditor({ starterCode, onChange, language = "javascript", fil
   // initial content, never re-runs while the learner is actively typing.
   // "Reset" below restores this formatted version, not the raw original,
   // so resetting doesn't re-introduce the unformatted starting point.
+  // When restoring an earlier attempt (`initialCode`), the formatted starter
+  // is still computed for Reset, but never replaces what the learner wrote.
   useEffect(() => {
     let cancelled = false;
     if (formattable) {
       formatCode(starterCode, language).then((formatted) => {
         if (cancelled || formatted === starterCode) return;
         initialCodeRef.current = formatted;
+        if (initialCode !== undefined) return;
         setCode(formatted);
         onChange(formatted);
       });

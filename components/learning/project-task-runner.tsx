@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Review, TranslatedProject } from "@/lib/schemas";
@@ -14,6 +14,9 @@ import { ReviewPanel } from "@/components/learning/review-panel";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useContentTranslation } from "@/lib/i18n/use-content-translation";
 import { track } from "@/lib/analytics/track";
+import { useDraft } from "@/lib/drafts";
+
+type DraftFiles = Array<{ filename: string; content: string }>;
 
 interface PastSubmission {
   id: string;
@@ -31,10 +34,28 @@ interface ProjectTaskRunnerProps {
   requirements: string[];
   initialStatus: "todo" | "in_review" | "changes_requested" | "done";
   startingFiles: EditableFile[];
+  /** The next open task in this project, if any - offered once this one is approved. */
+  nextTask?: { _id: string; taskCode: string; title: string } | null;
   pastSubmissions: PastSubmission[];
 }
 
-export function ProjectTaskRunner({
+export function ProjectTaskRunner(props: ProjectTaskRunnerProps) {
+  const { ready, draft, save, clear } = useDraft<DraftFiles>(`project-task:${props.taskId}`);
+
+  // The editor seeds its files once, on mount - wait for the stored draft so
+  // an unsubmitted attempt isn't replaced by the starting files on refresh.
+  if (!ready) return <div className="min-h-[60vh]" aria-busy="true" />;
+
+  // Only files that still exist in this task's starting set are restored.
+  const restored = props.startingFiles.map((f) => ({
+    ...f,
+    content: draft?.find((d) => d.filename === f.filename)?.content ?? f.content,
+  }));
+
+  return <ProjectTaskRunnerBody {...props} startingFiles={restored} originalFiles={props.startingFiles} save={save} clear={clear} />;
+}
+
+function ProjectTaskRunnerBody({
   projectId,
   contentLocale,
   taskId,
@@ -43,8 +64,16 @@ export function ProjectTaskRunner({
   requirements,
   initialStatus,
   startingFiles,
+  originalFiles,
+  nextTask,
   pastSubmissions,
-}: ProjectTaskRunnerProps) {
+  save,
+  clear,
+}: ProjectTaskRunnerProps & {
+  originalFiles: EditableFile[];
+  save: (files: DraftFiles) => void;
+  clear: () => void;
+}) {
   const { t } = useLocale();
   const latest = pastSubmissions[0] ?? null;
 
@@ -70,6 +99,23 @@ export function ProjectTaskRunner({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // The review lands below the editor - often off-screen on a long file - so
+  // after a fresh submission (not on first load) bring it into view.
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const scrollToReviewRef = useRef(false);
+  useEffect(() => {
+    if (scrollToReviewRef.current && review) {
+      scrollToReviewRef.current = false;
+      reviewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [review]);
+
+  // Persist only real edits - untouched starting files aren't worth a draft.
+  useEffect(() => {
+    const dirty = files.some((f) => f.content !== originalFiles.find((o) => o.filename === f.filename)?.content);
+    if (dirty) save(files);
+  }, [files, originalFiles, save]);
+
   async function handleSubmit() {
     if (files.every((f) => !f.content.trim())) return;
     setSubmitting(true);
@@ -83,8 +129,12 @@ export function ProjectTaskRunner({
       if (!res.ok) throw new Error(t.taskRunner.couldNotReview);
       const data = await res.json();
       const nextStatus = data.taskStatus as typeof status;
+      scrollToReviewRef.current = true;
       setReview(data.review as Review);
       setStatus(nextStatus);
+      // The submission is now the saved state (it becomes the next starting
+      // point), so the local draft would only be stale.
+      clear();
 
       track("project_task_reviewed", {
         projectId,
@@ -156,9 +206,21 @@ export function ProjectTaskRunner({
           )}
         </Button>
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
-      {review && <ReviewPanel review={review} />}
+      {review && (
+        <div ref={reviewRef} className="scroll-mt-6 space-y-4">
+          <ReviewPanel review={review} />
+          {status === "done" && !submitting && (
+            <Button asChild>
+              <Link href={nextTask ? `/projects/${projectId}/tasks/${nextTask._id}` : `/projects/${projectId}`}>
+                {nextTask ? t.taskRunner.nextTask(nextTask.taskCode, nextTask.title) : t.taskRunner.backToProject}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </Button>
+          )}
+        </div>
+      )}
 
       {pastSubmissions.length > 1 && (
         <details className="text-sm">

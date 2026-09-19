@@ -18,7 +18,7 @@ export default async function ProjectTaskPage({
 
   if (!detail || detail.task.userId !== user._id) notFound();
 
-  const { task, submissionsWithReviews, startingFiles } = detail;
+  const { task, submissionsWithReviews, startingFiles, nextTask } = detail;
 
   const pastSubmissions = submissionsWithReviews.map(({ submission, review }) => ({
     id: submission._id,
@@ -37,6 +37,7 @@ export default async function ProjectTaskPage({
       requirements={task.requirements}
       initialStatus={task.status}
       startingFiles={startingFiles}
+      nextTask={nextTask}
       pastSubmissions={pastSubmissions}
     />
   );

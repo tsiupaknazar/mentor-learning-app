@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, Dumbbell, Loader2 } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -44,7 +45,7 @@ export function MistakeList({
 
   if (mistakes === undefined) {
     return (
-      <div className="flex justify-center py-12">
+      <div className="flex justify-center py-12" role="status" aria-label={t.common.loading}>
         <Loader2 className="h-6 w-6 animate-spin text-accent" aria-hidden />
       </div>
     );
@@ -87,18 +88,28 @@ export function MistakeList({
                       <> · {t.mistakes.cleanStreak(m.consecutiveCleanAttempts ?? 0, RESOLVE_THRESHOLD)}</>
                     )}
                   </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={resolvingId === m._id}
-                    onClick={() => handleResolve(m._id)}
-                  >
-                    {resolvingId === m._id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    ) : (
-                      t.mistakes.markResolved
-                    )}
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {/* Drills the mistake's topic: exercise generation is fed the
+                        learner's recurring mistakes, so this targets it directly. */}
+                    <Button asChild size="sm">
+                      <Link href={`/practice/${m.topicId}`}>
+                        <Dumbbell className="h-3.5 w-3.5" aria-hidden />
+                        {t.mistakes.practiceThis}
+                      </Link>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={resolvingId === m._id}
+                      onClick={() => handleResolve(m._id)}
+                    >
+                      {resolvingId === m._id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        t.mistakes.markResolved
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

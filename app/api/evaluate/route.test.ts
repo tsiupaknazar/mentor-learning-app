@@ -64,6 +64,14 @@ const EVALUATION = {
   mentorFollowUp: null,
 };
 
+const ATTEMPT_RESULT = {
+  attemptId: "attempt1",
+  mastery: { overall: 50 },
+  masteryBefore: 42,
+  xpAwarded: 100,
+  newAchievements: ["first_win"],
+};
+
 beforeEach(() => {
   requireCurrentUserMock.mockReset();
   generateStructuredMock.mockReset();
@@ -73,7 +81,12 @@ beforeEach(() => {
   requireCurrentUserMock.mockResolvedValue(FAKE_USER);
   getLearnerContextMock.mockResolvedValue(FAKE_LEARNER_CONTEXT);
   convexQueryMock.mockResolvedValue(EXERCISE_ROW);
-  convexMutationMock.mockResolvedValue({ attemptId: "attempt1", mastery: { overall: 50 } });
+  // recordAttempt / recordActivity / incrementSessionProgress are told apart by their args.
+  convexMutationMock.mockImplementation(async (_ref: unknown, args: Record<string, unknown>) => {
+    if ("exerciseId" in args) return ATTEMPT_RESULT;
+    if ("sessionId" in args) return undefined;
+    return []; // recordActivity: no streak badges
+  });
   generateStructuredMock.mockResolvedValue({ ...EVALUATION });
 });
 
@@ -129,6 +142,36 @@ describe("POST /api/evaluate", () => {
     await POST(jsonRequest({ ...VALID_BODY, sessionId: "session1" }));
     expect(convexMutationMock).toHaveBeenCalledTimes(3);
     expect(convexMutationMock).toHaveBeenCalledWith(expect.anything(), { sessionId: "session1" });
+  });
+
+  it("returns what the attempt earned: XP, mastery before/after, and new badges (attempt + streak)", async () => {
+    convexMutationMock.mockImplementation(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("exerciseId" in args) return ATTEMPT_RESULT;
+      return ["streak_7"];
+    });
+
+    const res = await POST(jsonRequest(VALID_BODY));
+    const { body } = await statusAndBody(res);
+
+    expect(body.reward).toEqual({
+      xpAwarded: 100,
+      masteryBefore: 42,
+      masteryAfter: 50,
+      newAchievements: ["first_win", "streak_7"],
+    });
+  });
+
+  it("tolerates a backend that predates the reward fields, reporting nothing earned instead of NaN", async () => {
+    convexMutationMock.mockImplementation(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("exerciseId" in args) return { attemptId: "attempt1", mastery: { overall: 50 } };
+      return undefined; // old recordActivity returned nothing
+    });
+
+    const res = await POST(jsonRequest(VALID_BODY));
+    const { status, body } = await statusAndBody(res);
+
+    expect(status).toBe(200);
+    expect(body.reward).toEqual({ xpAwarded: 0, masteryBefore: 50, masteryAfter: 50, newAchievements: [] });
   });
 
   it("returns the evaluation and mastery on success", async () => {

@@ -16,6 +16,7 @@ import type { TranslatedExercise } from "@/lib/schemas";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useBatchContentTranslation } from "@/lib/i18n/use-content-translation";
 import { cn } from "@/lib/utils";
+import { orderTopicsForLearning } from "@/convex/lib/topicOrder";
 
 type BoardDifficulty = "easy" | "medium" | "hard";
 const DIFFICULTIES: BoardDifficulty[] = ["easy", "medium", "hard"];
@@ -44,10 +45,13 @@ export function PracticeBoard({ userId }: { userId: Id<"users"> }) {
   );
 
   const currentTopicIds = useMemo(() => {
-    const inProgress = topics.filter((tp) => (tp.progress?.status ?? "not_started") !== "mastered");
-    const pool = inProgress.length > 0 ? inProgress : topics;
-    return [...pool]
-      .sort((a, b) => a.orderIndex - b.orderIndex)
+    // Locked topics are ahead of the learner (a prerequisite isn't mastered
+    // yet), so generating problems for them would spend the batch on material
+    // they can't reach - prefer topics they can actually start, in path order.
+    const startable = topics.filter((tp) => !tp.locked);
+    const inProgress = startable.filter((tp) => (tp.progress?.status ?? "not_started") !== "mastered");
+    const pool = inProgress.length > 0 ? inProgress : startable.length > 0 ? startable : topics;
+    return orderTopicsForLearning(pool)
       .slice(0, MAX_AUTO_TOPICS)
       .map((tp) => tp._id);
   }, [topics]);
@@ -144,6 +148,7 @@ export function PracticeBoard({ userId }: { userId: Id<"users"> }) {
               {topics.map((tp) => (
                 <SelectItem key={tp._id} value={tp._id}>
                   {tp.title}
+                  {tp.locked ? ` \u00b7 ${t.learn.locked}` : ""}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -190,10 +195,10 @@ export function PracticeBoard({ userId }: { userId: Id<"users"> }) {
         </div>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
       {problems === undefined || (generating && filtered.length === 0) ? (
-        <div className="flex flex-col items-center gap-3 py-16 text-center">
+        <div className="flex flex-col items-center gap-3 py-16 text-center" role="status">
           <Loader2 className="h-6 w-6 animate-spin text-accent" aria-hidden />
           <p className="font-mono text-sm text-muted-foreground">
             {problems === undefined ? t.common.loading : t.practice.generating}

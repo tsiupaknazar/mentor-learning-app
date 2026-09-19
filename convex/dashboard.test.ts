@@ -176,7 +176,7 @@ describe("getDashboardSummary", () => {
   it("computes overallMastery as the average across all topics", async () => {
     const t = convexTest(schema);
     const userId = await seedUser(t);
-    await seedPathWithTopic(
+    const { learningPathId } = await seedPathWithTopic(
       t,
       userId,
       { externalId: "a" },
@@ -186,10 +186,139 @@ describe("getDashboardSummary", () => {
       t,
       userId,
       { externalId: "b" },
-      { mastery: { knowledge: 0, application: 0, debugging: 0, explanation: 0, retention: 0, overall: 0 } }
+      { mastery: { knowledge: 0, application: 0, debugging: 0, explanation: 0, retention: 0, overall: 0 } },
+      learningPathId
     );
 
     const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
     expect(summary?.overallMastery).toBe(50);
+  });
+});
+
+describe("getDashboardSummary next action: path scoping, locks and order", () => {
+  const FRESH = { status: "not_started", attemptsCount: 0 };
+
+  async function deactivate(t: ReturnType<typeof convexTest>, learningPathId: string) {
+    await t.run((ctx) => ctx.db.patch(learningPathId as never, { isActive: false }));
+  }
+
+  it("ignores in-progress work from an earlier, inactive path and points at the active path instead", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const old = await seedPathWithTopic(t, userId, { externalId: "old", title: "Old Topic" }, { status: "in_progress" });
+    await deactivate(t, old.learningPathId);
+    await seedPathWithTopic(t, userId, { externalId: "fresh", title: "Fresh Topic" }, FRESH);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    // Previously the old path's topic won the lookup, wasn't found in the active
+    // path, and nextAction came back null ("no active path").
+    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Fresh Topic" });
+  });
+
+  it("ignores a due review from an earlier, inactive path", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const old = await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "old", title: "Old Topic" },
+      { status: "needs_review", nextReviewDue: Date.now() - 1000 }
+    );
+    await deactivate(t, old.learningPathId);
+    await seedPathWithTopic(t, userId, { externalId: "fresh", title: "Fresh Topic" }, FRESH);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Fresh Topic" });
+  });
+
+  it("never suggests starting a locked topic", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { learningPathId } = await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "advanced", title: "Advanced", prerequisiteExternalIds: ["basics"], orderIndex: 0 },
+      FRESH
+    );
+    await seedPathWithTopic(t, userId, { externalId: "basics", title: "Basics", orderIndex: 1 }, FRESH, learningPathId);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Basics" });
+  });
+
+  it("does not offer to continue a topic that has become locked again", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { learningPathId } = await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "advanced", title: "Advanced", prerequisiteExternalIds: ["basics"], orderIndex: 1 },
+      { status: "in_progress" }
+    );
+    // Prerequisite slipped back to needs_review (a failed attempt), so "advanced" is locked again.
+    await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "basics", title: "Basics", orderIndex: 0 },
+      { status: "needs_review" },
+      learningPathId
+    );
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.nextAction).toMatchObject({ kind: "continue", topicTitle: "Basics" });
+  });
+
+  it("starts the first topic in learning-path order, not database insertion order", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { learningPathId } = await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "second", title: "Second", orderIndex: 1 },
+      FRESH
+    );
+    await seedPathWithTopic(t, userId, { externalId: "first", title: "First", orderIndex: 0 }, FRESH, learningPathId);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.nextAction?.topicTitle).toBe("First");
+  });
+
+  it("visits a parent topic before its children, then the next root", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const root2 = await seedPathWithTopic(t, userId, { externalId: "root2", title: "Root 2", orderIndex: 1 }, FRESH);
+    const root1 = await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "root1", title: "Root 1", orderIndex: 0 },
+      { status: "mastered", attemptsCount: 3 },
+      root2.learningPathId
+    );
+    await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "child", title: "Child of Root 1", orderIndex: 0, parentTopicId: root1.topicId },
+      FRESH,
+      root2.learningPathId
+    );
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    // Root 1 is mastered; its child comes before Root 2 in tree order.
+    expect(summary?.nextAction?.topicTitle).toBe("Child of Root 1");
+  });
+
+  it("counts mastered topics and overall mastery for the active path only", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const full = { knowledge: 100, application: 100, debugging: 100, explanation: 100, retention: 100, overall: 100 };
+    const old = await seedPathWithTopic(t, userId, { externalId: "old" }, { status: "mastered", mastery: full });
+    await deactivate(t, old.learningPathId);
+    await seedPathWithTopic(t, userId, { externalId: "fresh" }, FRESH);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.topicsCount).toBe(1);
+    expect(summary?.topicsMastered).toBe(0); // was 1/1 mastered via the old path
+    expect(summary?.overallMastery).toBe(0);
   });
 });

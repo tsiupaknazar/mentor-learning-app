@@ -162,7 +162,7 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
         {view === "ideas" ? (
           <div className="space-y-3">
             {ideasError && (
-              <p className="text-sm text-destructive">{t.projects.newProject.ideasError}</p>
+              <p role="alert" className="text-sm text-destructive">{t.projects.newProject.ideasError}</p>
             )}
 
             {ideasLoading ? (
@@ -195,7 +195,7 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
               </div>
             ) : null}
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
 
             <div className="flex flex-wrap items-center gap-3">
               {!ideasLoading && (
@@ -227,7 +227,7 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
                 onChange={(e) => setTopic(e.target.value)}
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <div className="flex flex-wrap items-center gap-3">
               <Button onClick={handleCustomSubmit} disabled={generating}>
                 {generating ? (

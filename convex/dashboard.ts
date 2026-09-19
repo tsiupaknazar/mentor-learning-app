@@ -1,6 +1,8 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { masteryBand } from "./lib/bands";
+import { isTopicLocked } from "./lib/topicLocking";
+import { orderTopicsForLearning } from "./lib/topicOrder";
 
 /**
  * Builds the compact `LearnerContext` (types/domain.ts) that every Gemini
@@ -107,20 +109,38 @@ export const getDashboardSummary = query({
       : [];
     const titleByTopicId = new Map(topics.map((t) => [t._id, t]));
 
+    // Progress rows outlive their path (starting a new topic deactivates the old
+    // path but keeps its rows), so everything below - the next action AND the
+    // counts - only considers topics of the active path. Otherwise an old path's
+    // topic could win the lookup and leave the dashboard with no next action.
+    const pathProgress = progressRows.filter((p) => titleByTopicId.has(p.topicId));
+
+    // A topic can't be started (or continued) while a prerequisite isn't
+    // mastered, so it's never a valid suggestion - the button would just lead
+    // to the "locked" notice. Same rule as the Learn tab (convex/lib/topicLocking.ts).
+    const statusByExternalId = new Map(
+      topics.map((t) => [t.externalId, pathProgress.find((p) => p.topicId === t._id)?.status])
+    );
+    const isLocked = (topicId: string) => {
+      const topic = titleByTopicId.get(topicId as never);
+      return !topic || isTopicLocked(topic.prerequisiteExternalIds, statusByExternalId);
+    };
+
     // Next action: prefer a topic due for spaced-repetition review, then an
-    // in-progress topic with the lowest mastery, then the first not-started topic.
+    // in-progress topic with the lowest mastery, then the first not-started
+    // topic in learning-path order.
     const now = Date.now();
-    const dueForReview = progressRows
-      .filter((p) => p.nextReviewDue !== undefined && p.nextReviewDue <= now && p.status !== "mastered")
+    const dueForReview = pathProgress
+      .filter((p) => p.nextReviewDue !== undefined && p.nextReviewDue <= now && p.status !== "mastered" && !isLocked(p.topicId))
       .sort((a, b) => (a.nextReviewDue ?? 0) - (b.nextReviewDue ?? 0))[0];
 
-    const inProgress = progressRows
-      .filter((p) => p.status === "in_progress" || p.status === "needs_review")
+    const inProgress = pathProgress
+      .filter((p) => (p.status === "in_progress" || p.status === "needs_review") && !isLocked(p.topicId))
       .sort((a, b) => a.mastery.overall - b.mastery.overall)[0];
 
-    const notStarted = topics
-      .map((t) => ({ topic: t, progress: progressRows.find((p) => p.topicId === t._id) }))
-      .find((x) => !x.progress || x.progress.status === "not_started");
+    const notStarted = orderTopicsForLearning(topics)
+      .map((t) => ({ topic: t, progress: pathProgress.find((p) => p.topicId === t._id) }))
+      .find((x) => (!x.progress || x.progress.status === "not_started") && !isLocked(x.topic._id));
 
     let nextAction:
       | { kind: "review" | "continue" | "start"; topicId: string; topicTitle: string; mastery: number }
@@ -142,8 +162,8 @@ export const getDashboardSummary = query({
     }
 
     const overallMastery =
-      progressRows.length > 0
-        ? Math.round(progressRows.reduce((sum, p) => sum + p.mastery.overall, 0) / progressRows.length)
+      pathProgress.length > 0
+        ? Math.round(pathProgress.reduce((sum, p) => sum + p.mastery.overall, 0) / pathProgress.length)
         : 0;
 
     const openMistakesCount = await ctx.db
@@ -162,7 +182,7 @@ export const getDashboardSummary = query({
       activePathTitle: activePath?.title ?? null,
       overallMastery,
       topicsCount: topics.length,
-      topicsMastered: progressRows.filter((p) => p.status === "mastered").length,
+      topicsMastered: pathProgress.filter((p) => p.status === "mastered").length,
       openMistakesCount: openMistakesCount.length,
       nextAction,
     };

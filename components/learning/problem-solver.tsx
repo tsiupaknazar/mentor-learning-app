@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Lightbulb, Loader2 } from "lucide-react";
 
 import type { Id } from "@/convex/_generated/dataModel";
-import type { ClientExercise, ExerciseType } from "@/types/domain";
+import type { AttemptReward, ClientExercise, ExerciseType } from "@/types/domain";
 import type { Evaluation, Hint, TranslatedExercise } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,9 +13,11 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { CodeEditor } from "@/components/learning/code-editor";
 import { ReadOnlyCode } from "@/components/learning/read-only-code";
-import { FeedbackPanel } from "@/components/learning/feedback-panel";
+import { FeedbackPanel, RewardStrip } from "@/components/learning/feedback-panel";
+import { ChoiceList } from "@/components/learning/choice-list";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useBatchContentTranslation } from "@/lib/i18n/use-content-translation";
+import { useDraft } from "@/lib/drafts";
 
 const HINT_LEVELS: Hint["level"][] = ["direction", "specific_problem", "strong_hint"];
 
@@ -37,12 +39,41 @@ const READ_ONLY_CODE_TYPES = new Set<ExerciseType>([
 
 const DIFFICULTY_VARIANT = { easy: "strong", medium: "medium", hard: "weak" } as const;
 
+/** What survives a refresh: the work in progress, including hints already taken (they affect scoring). */
+interface ProblemDraft {
+  answer: string;
+  hints: Hint[];
+  solutionRevealed: boolean;
+}
+
 export function ProblemSolver({
   exerciseId,
   exercise,
 }: {
   exerciseId: Id<"exercises">;
   exercise: ClientExercise;
+}) {
+  const { ready, draft, save, clear } = useDraft<ProblemDraft>(`exercise:${exerciseId}`);
+
+  // The editors seed their content once, on mount - so wait until the stored
+  // draft has been read instead of mounting empty and losing it.
+  if (!ready) return <div className="min-h-[60vh]" aria-busy="true" />;
+
+  return <ProblemSolverBody exerciseId={exerciseId} exercise={exercise} initial={draft} save={save} clear={clear} />;
+}
+
+function ProblemSolverBody({
+  exerciseId,
+  exercise,
+  initial,
+  save,
+  clear,
+}: {
+  exerciseId: Id<"exercises">;
+  exercise: ClientExercise;
+  initial: ProblemDraft | null;
+  save: (draft: ProblemDraft) => void;
+  clear: () => void;
 }) {
   const { t } = useLocale();
 
@@ -56,22 +87,31 @@ export function ProblemSolver({
   const prompt = translated?.prompt ?? exercise.prompt;
   const choices = translated?.choices ?? exercise.choices;
 
-  const [answer, setAnswer] = useState("");
-  const [hintsUsed, setHintsUsed] = useState(0);
-  const [visibleHints, setVisibleHints] = useState<Hint[]>([]);
-  const [solutionRevealed, setSolutionRevealed] = useState(false);
+  const [answer, setAnswer] = useState(initial?.answer ?? "");
+  const [hintsUsed, setHintsUsed] = useState(initial?.hints.length ?? 0);
+  const [visibleHints, setVisibleHints] = useState<Hint[]>(initial?.hints ?? []);
+  const [solutionRevealed, setSolutionRevealed] = useState(initial?.solutionRevealed ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
+  const [reward, setReward] = useState<AttemptReward | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hintError, setHintError] = useState<string | null>(null);
 
   const isCodeAnswer = exercise.starterCode !== null && CODE_ANSWER_TYPES.has(exercise.type);
   const isReadOnlyCode = exercise.starterCode !== null && READ_ONLY_CODE_TYPES.has(exercise.type);
   const isMultipleChoice = exercise.type === "multiple_choice" && exercise.choices;
 
+  useEffect(() => {
+    if (answer || visibleHints.length > 0 || solutionRevealed) {
+      save({ answer, hints: visibleHints, solutionRevealed });
+    }
+  }, [answer, visibleHints, solutionRevealed, save]);
+
   async function handleHint() {
     if (hintsUsed >= HINT_LEVELS.length) return;
     const level = HINT_LEVELS[hintsUsed];
     if (!level) return;
+    setHintError(null);
     try {
       const res = await fetch("/api/hint", {
         method: "POST",
@@ -83,7 +123,20 @@ export function ProblemSolver({
       setVisibleHints((prev) => [...prev, data.hint as Hint]);
       setHintsUsed((n) => n + 1);
     } catch {
-      // Non-fatal — the learner can just keep working without the hint.
+      // Non-fatal (they can keep working), but say so - a button that
+      // silently does nothing reads as broken.
+      setHintError(t.session.couldNotGetHint);
+    }
+  }
+
+  // Ctrl/Cmd+Enter submits from anywhere on the exercise, including inside the
+  // code editor. Captured before CodeMirror sees it, since its own Mod-Enter
+  // binding would insert a blank line.
+  function submitOnModEnter(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && answer.trim() && !submitting) {
+      e.preventDefault();
+      e.stopPropagation();
+      void handleSubmit();
     }
   }
 
@@ -105,7 +158,12 @@ export function ProblemSolver({
       });
       if (!res.ok) throw new Error(t.session.couldNotEvaluate);
       const data = await res.json();
-      setEvaluation(data.evaluation as Evaluation);
+      const result = data.evaluation as Evaluation;
+      setEvaluation(result);
+      setReward((data.reward as AttemptReward | undefined) ?? null);
+      // Solved - nothing left worth restoring. An incorrect attempt keeps its
+      // draft so the learner can pick the revision up after a refresh.
+      if (result.result === "correct") clear();
     } catch (e) {
       setError(e instanceof Error ? e.message : t.common.somethingWentWrong);
     } finally {
@@ -142,27 +200,15 @@ export function ProblemSolver({
       )}
 
       {!evaluation && (
-        <>
+        <div className="space-y-6" onKeyDownCapture={submitOnModEnter}>
           {isMultipleChoice ? (
-            <div className="grid gap-2">
-              {choices!.map((choice) => (
-                <button
-                  key={choice}
-                  type="button"
-                  onClick={() => setAnswer(choice)}
-                  className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
-                    answer === choice
-                      ? "border-accent bg-accent/10 text-foreground"
-                      : "border-border bg-surface hover:bg-muted"
-                  }`}
-                >
-                  {choice}
-                </button>
-              ))}
-            </div>
+            <ChoiceList choices={choices!} value={answer} onChange={setAnswer} label={title} />
           ) : isCodeAnswer ? (
             <CodeEditor
               starterCode={exercise.starterCode ?? "// Write your solution here\n"}
+              // Non-empty only when returning via "Revise and resubmit" — the
+              // editor unmounts during feedback and would otherwise reset.
+              initialCode={answer || undefined}
               onChange={setAnswer}
               language={exercise.language}
             />
@@ -189,7 +235,7 @@ export function ProblemSolver({
           )}
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={handleSubmit} disabled={submitting || !answer.trim()}>
+            <Button onClick={handleSubmit} disabled={submitting || !answer.trim()} title="Ctrl/⌘ + Enter">
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -208,14 +254,17 @@ export function ProblemSolver({
                 {t.session.markSolutionRevealed}
               </Button>
             )}
+            {solutionRevealed && <p className="text-xs text-muted-foreground">{t.session.solutionMarked}</p>}
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </>
+          {hintError && <p role="alert" className="text-sm text-destructive">{hintError}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        </div>
       )}
 
       {evaluation && (
         <div className="space-y-4">
           <FeedbackPanel evaluation={evaluation} exerciseId={exerciseId} />
+          {reward && <RewardStrip reward={reward} />}
           <div className="flex flex-wrap gap-3">
             {evaluation.result !== "correct" && (
               <Button variant="outline" onClick={() => setEvaluation(null)}>

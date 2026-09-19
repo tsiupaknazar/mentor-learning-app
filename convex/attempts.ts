@@ -2,7 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { EMPTY_MASTERY, nextReviewDelayMs, updateMasteryFromAttempt } from "./lib/mastery";
-import { awardAchievement, ACHIEVEMENT_KEYS } from "./lib/achievements";
+import { awardAchievement, ACHIEVEMENT_KEYS, type AchievementKey } from "./lib/achievements";
 import { awardXp } from "./lib/xp";
 
 const NO_HINT_STREAK_FOR_PERFECT_FIVE = 5;
@@ -79,6 +79,10 @@ export const recordAttempt = mutation({
       hasAttemptedBefore
     );
 
+    // What this attempt newly earned - returned so the UI can show it.
+    const newAchievements: AchievementKey[] = [];
+    let xpAwarded = 0;
+
     const wasCorrect = args.result === "correct";
     const nextReviewDue = Date.now() + nextReviewDelayMs(newMastery.overall, wasCorrect);
     const wasAlreadyMastered = progress?.status === "mastered";
@@ -111,7 +115,9 @@ export const recordAttempt = mutation({
 
     // --- Achievements: mastery (section 26) --------------------------
     if (status === "mastered" && !wasAlreadyMastered) {
-      await awardAchievement(ctx, args.userId, ACHIEVEMENT_KEYS.firstMastery);
+      if (await awardAchievement(ctx, args.userId, ACHIEVEMENT_KEYS.firstMastery)) {
+        newAchievements.push(ACHIEVEMENT_KEYS.firstMastery);
+      }
     }
 
     // --- Recurring mistake tracking (section 18) ---------------------
@@ -150,7 +156,8 @@ export const recordAttempt = mutation({
         xp += 15;
       }
       if (xp > 0) {
-        await awardXp(ctx, args.userId, xp);
+        newAchievements.push(...(await awardXp(ctx, args.userId, xp)));
+        xpAwarded = xp;
       }
 
       // --- Achievements: streaks of accomplishment (section 26) ------
@@ -160,15 +167,24 @@ export const recordAttempt = mutation({
         totalCorrectAttempts: newTotalCorrect,
         currentNoHintStreak: newNoHintStreak,
       });
-      if (newTotalCorrect === 1) {
-        await awardAchievement(ctx, args.userId, ACHIEVEMENT_KEYS.firstWin);
+      if (newTotalCorrect === 1 && (await awardAchievement(ctx, args.userId, ACHIEVEMENT_KEYS.firstWin))) {
+        newAchievements.push(ACHIEVEMENT_KEYS.firstWin);
       }
-      if (newNoHintStreak >= NO_HINT_STREAK_FOR_PERFECT_FIVE) {
-        await awardAchievement(ctx, args.userId, ACHIEVEMENT_KEYS.perfectFive);
+      if (
+        newNoHintStreak >= NO_HINT_STREAK_FOR_PERFECT_FIVE &&
+        (await awardAchievement(ctx, args.userId, ACHIEVEMENT_KEYS.perfectFive))
+      ) {
+        newAchievements.push(ACHIEVEMENT_KEYS.perfectFive);
       }
     }
 
-    return { attemptId, mastery: newMastery };
+    return {
+      attemptId,
+      mastery: newMastery,
+      masteryBefore: previousMastery.overall,
+      xpAwarded,
+      newAchievements,
+    };
   },
 });
 

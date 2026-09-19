@@ -111,12 +111,20 @@ export default async function DashboardPage() {
             </Link>
           </div>
           <div className="divide-y divide-border border-y border-border">
-            {mistakes.slice(0, 3).map((m: { _id: string; description: string; occurrences: number }) => (
+            {mistakes.slice(0, 3).map((m: { _id: string; topicId: string; description: string; occurrences: number }) => (
               <div key={m._id} className="flex items-center justify-between gap-4 border-l-2 border-redline py-3 pl-4">
                 <p className="text-sm">{m.description}</p>
-                <Badge variant={m.occurrences >= 3 ? "destructive" : "medium"} className="shrink-0 font-mono-tabular">
-                  ×{m.occurrences}
-                </Badge>
+                <div className="flex shrink-0 items-center gap-3">
+                  <Badge variant={m.occurrences >= 3 ? "destructive" : "medium"} className="font-mono-tabular">
+                    ×{m.occurrences}
+                  </Badge>
+                  <Link
+                    href={`/practice/${m.topicId}`}
+                    className="text-xs text-accent underline underline-offset-4"
+                  >
+                    {t.mistakes.practiceThis}
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

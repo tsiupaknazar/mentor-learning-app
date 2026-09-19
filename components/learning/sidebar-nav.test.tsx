@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useQuery } from "convex/react";
@@ -54,5 +55,57 @@ describe("SidebarNav", () => {
     mockQueries({ user: { currentStreak: 3 } });
     render(<SidebarNav />);
     expect(screen.getByText("3 days")).toBeInTheDocument();
+  });
+
+  it("marks only the current page's link with aria-current", () => {
+    vi.mocked(usePathname).mockReturnValue("/learn/123");
+    render(<SidebarNav />);
+    const current = screen.getAllByRole("link").filter((a) => a.getAttribute("aria-current") === "page");
+    expect(current.map((a) => a.textContent)).toEqual(["Learn"]);
+  });
+
+  describe("mobile menu", () => {
+    const drawer = () => document.getElementById("mobile-nav");
+
+    it("is closed until the menu button is pressed, and the button reports its state", async () => {
+      const user = userEvent.setup();
+      render(<SidebarNav />);
+      const button = screen.getByRole("button", { name: "Open menu" });
+      expect(button).toHaveAttribute("aria-expanded", "false");
+      expect(drawer()).toBeNull();
+
+      await user.click(button);
+
+      expect(button).toHaveAttribute("aria-expanded", "true");
+      expect(drawer()).not.toBeNull();
+      expect(within(drawer()!).getByRole("link", { name: /Practice/ })).toHaveAttribute("href", "/practice");
+    });
+
+    it("closes with the close button, Escape, or a tap on the backdrop", async () => {
+      const user = userEvent.setup();
+      render(<SidebarNav />);
+
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+      await user.click(screen.getByRole("button", { name: "Close menu" }));
+      expect(drawer()).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+      await user.keyboard("{Escape}");
+      expect(drawer()).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+      await user.click(drawer()!.previousElementSibling as HTMLElement); // the backdrop
+      expect(drawer()).toBeNull();
+    });
+
+    it("closes after choosing a destination", async () => {
+      const user = userEvent.setup();
+      render(<SidebarNav />);
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+
+      await user.click(within(drawer()!).getByRole("link", { name: /Mistakes/ }));
+
+      expect(drawer()).toBeNull();
+    });
   });
 });
