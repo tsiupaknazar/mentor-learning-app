@@ -1,5 +1,5 @@
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
 import { seedUser, seedTopic } from "./test-helpers";
@@ -328,5 +328,96 @@ describe("listAttemptsForTopic", () => {
 
     const attempts = await t.query(api.attempts.listAttemptsForTopic, { userId, topicId });
     expect(attempts.map((a) => a.submittedAnswer)).toEqual(["second", "first"]);
+  });
+});
+
+describe("activityByDay", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function insertAttempt(
+    t: ReturnType<typeof convexTest>,
+    ids: { userId: string; topicId: string; exerciseId: string },
+    submittedAt: number,
+    result: "correct" | "incorrect" = "correct"
+  ) {
+    await t.run((ctx) =>
+      ctx.db.insert("attempts", {
+        userId: ids.userId as never,
+        exerciseId: ids.exerciseId as never,
+        topicId: ids.topicId as never,
+        submittedAnswer: "a",
+        hintsUsed: 0,
+        solutionRevealed: false,
+        result,
+        scores: PERFECT_SCORES,
+        feedback: BASE_FEEDBACK,
+        submittedAt,
+      })
+    );
+  }
+
+  it("counts submissions and correct ones per UTC day, oldest first, skipping quiet days", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-10T15:00:00Z"));
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { topicId } = await seedTopic(t, userId);
+    const exerciseId = await seedExercise(t, userId, topicId);
+    const ids = { userId, topicId, exerciseId };
+
+    await insertAttempt(t, ids, Date.parse("2024-06-10T09:00:00Z"), "correct");
+    await insertAttempt(t, ids, Date.parse("2024-06-10T11:00:00Z"), "incorrect");
+    await insertAttempt(t, ids, Date.parse("2024-06-07T23:59:00Z"), "correct");
+
+    const activity = await t.query(api.attempts.activityByDay, { userId, days: 30 });
+
+    expect(activity).toEqual([
+      { date: "2024-06-07", count: 1, correct: 1 },
+      { date: "2024-06-10", count: 2, correct: 1 },
+    ]);
+  });
+
+  it("ignores attempts older than the window, and other learners' attempts", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-10T15:00:00Z"));
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const other = await seedUser(t, { clerkId: "someone_else" });
+    const { topicId } = await seedTopic(t, userId);
+    const exerciseId = await seedExercise(t, userId, topicId);
+    const ids = { userId, topicId, exerciseId };
+
+    await insertAttempt(t, ids, Date.parse("2024-06-10T09:00:00Z"));
+    await insertAttempt(t, ids, Date.parse("2024-06-01T09:00:00Z")); // 9 days back: outside a 7-day window
+    await insertAttempt(t, { ...ids, userId: other }, Date.parse("2024-06-10T09:00:00Z"));
+
+    const activity = await t.query(api.attempts.activityByDay, { userId, days: 7 });
+
+    expect(activity).toEqual([{ date: "2024-06-10", count: 1, correct: 1 }]);
+  });
+
+  it("includes the first day of the window in full (a 7-day window reaches back 6 days from today)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2024-06-10T15:00:00Z"));
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { topicId } = await seedTopic(t, userId);
+    const exerciseId = await seedExercise(t, userId, topicId);
+    const ids = { userId, topicId, exerciseId };
+
+    await insertAttempt(t, ids, Date.parse("2024-06-04T00:00:01Z")); // first day of the window
+    await insertAttempt(t, ids, Date.parse("2024-06-03T23:59:59Z")); // one second before it
+
+    const activity = await t.query(api.attempts.activityByDay, { userId, days: 7 });
+
+    expect(activity.map((d) => d.date)).toEqual(["2024-06-04"]);
+  });
+
+  it("is empty for a learner with no attempts", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    expect(await t.query(api.attempts.activityByDay, { userId, days: 84 })).toEqual([]);
   });
 });

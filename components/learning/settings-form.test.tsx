@@ -29,7 +29,7 @@ describe("SettingsForm", () => {
   it("renders the account email and level", () => {
     render(<SettingsForm {...BASE_PROPS} />);
     expect(screen.getByText("learner@example.com")).toBeInTheDocument();
-    expect(screen.getByText("junior")).toBeInTheDocument();
+    expect(screen.getByText("Junior")).toBeInTheDocument();
   });
 
   it("saves only the changed field when the learning-goal select changes, and shows the saved checkmark", async () => {
@@ -64,5 +64,47 @@ describe("SettingsForm", () => {
 
     expect(setLocaleMock).toHaveBeenCalledWith("uk");
     expect(updatePreferencesMock).not.toHaveBeenCalled();
+  });
+
+  it("puts the select back and says so when saving fails, instead of showing an unsaved value", async () => {
+    updatePreferencesMock.mockRejectedValue(new Error("network"));
+    const user = userEvent.setup();
+    render(<SettingsForm {...BASE_PROPS} />);
+
+    const [goalSelect] = screen.getAllByRole("combobox");
+    expect(goalSelect).toHaveTextContent("Improve existing skills");
+    await user.click(goalSelect!);
+    await user.click(await screen.findByRole("option", { name: "Prepare for interviews" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t save that change. Your previous setting was kept.");
+    expect(goalSelect).toHaveTextContent("Improve existing skills"); // reverted
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+  });
+
+  it("announces a successful save as a status and clears an earlier error", async () => {
+    updatePreferencesMock.mockRejectedValueOnce(new Error("network")).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<SettingsForm {...BASE_PROPS} />);
+    const [goalSelect] = screen.getAllByRole("combobox");
+
+    await user.click(goalSelect!);
+    await user.click(await screen.findByRole("option", { name: "Prepare for interviews" }));
+    await screen.findByRole("alert");
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+
+    await user.click(goalSelect!);
+    await user.click(await screen.findByRole("option", { name: "Prepare for interviews" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+  });
+
+  it("shows the level in the learner's language rather than the stored key", () => {
+    vi.mocked(useLocale).mockReturnValue({ t: dictionaries.uk, locale: "uk", setLocale: setLocaleMock });
+    render(<SettingsForm {...BASE_PROPS} />);
+    expect(screen.getByText(dictionaries.uk.onboarding.levels.junior)).toBeInTheDocument();
+    expect(screen.queryByText("junior")).not.toBeInTheDocument();
   });
 });

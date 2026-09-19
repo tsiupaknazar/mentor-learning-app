@@ -188,6 +188,38 @@ export const recordAttempt = mutation({
   },
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_ACTIVITY_DAYS = 400;
+
+/**
+ * How many answers the learner submitted on each of the last `days` days
+ * (UTC dates, matching how daily streaks are counted), and how many of those
+ * were correct. Only days with activity are returned, oldest first.
+ */
+export const activityByDay = query({
+  args: { userId: v.id("users"), days: v.number() },
+  handler: async (ctx, args) => {
+    const days = Math.max(1, Math.min(Math.floor(args.days), MAX_ACTIVITY_DAYS));
+    const startOfToday = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    const since = startOfToday - (days - 1) * DAY_MS;
+
+    const attempts = await ctx.db
+      .query("attempts")
+      .withIndex("by_user_and_submitted", (q) => q.eq("userId", args.userId).gte("submittedAt", since))
+      .collect();
+
+    const byDate = new Map<string, { count: number; correct: number }>();
+    for (const a of attempts) {
+      const date = new Date(a.submittedAt).toISOString().slice(0, 10);
+      const day = byDate.get(date) ?? { count: 0, correct: 0 };
+      day.count += 1;
+      if (a.result === "correct") day.correct += 1;
+      byDate.set(date, day);
+    }
+    return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date, ...v }));
+  },
+});
+
 export const listAttemptsForTopic = query({
   args: { userId: v.id("users"), topicId: v.id("topics") },
   handler: async (ctx, args) => {

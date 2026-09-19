@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { Check } from "lucide-react";
 
@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { levelLabel } from "@/lib/i18n/dictionaries";
 
 interface SettingsFormProps {
   userId: Id<"users">;
@@ -29,6 +30,14 @@ export function SettingsForm(props: SettingsFormProps) {
   const [style, setStyle] = useState(props.learningStyle);
   const [time, setTime] = useState(props.dailyTime);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+    },
+    []
+  );
 
   const GOALS: { value: LearningGoal; label: string }[] = (
     Object.keys(t.onboarding.goals) as LearningGoal[]
@@ -43,10 +52,24 @@ export function SettingsForm(props: SettingsFormProps) {
     Object.keys(t.settings.languageNames) as Locale[]
   ).map((value) => ({ value, label: t.settings.languageNames[value] }));
 
-  async function save(patch: Partial<{ learningGoal: LearningGoal; learningStyle: LearningStyle; dailyTime: DailyTime }>) {
-    await updatePreferences({ userId: props.userId, ...patch });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1500);
+  // The select has already switched by the time this runs, so a failed save
+  // must switch it back (`revert`) - otherwise the form shows a setting that
+  // was never stored, and nothing says so.
+  async function save(
+    patch: Partial<{ learningGoal: LearningGoal; learningStyle: LearningStyle; dailyTime: DailyTime }>,
+    revert: () => void
+  ) {
+    setSaveError(null);
+    try {
+      await updatePreferences({ userId: props.userId, ...patch });
+      setSaved(true);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaved(false), 1500);
+    } catch {
+      revert();
+      setSaved(false);
+      setSaveError(t.settings.couldNotSave);
+    }
   }
 
   return (
@@ -56,9 +79,7 @@ export function SettingsForm(props: SettingsFormProps) {
           <p className="text-xs uppercase tracking-wide text-muted-foreground">{t.settings.account}</p>
           <p className="text-sm">{props.email}</p>
           <div className="pt-1">
-            <Badge variant="outline" className="capitalize">
-              {props.level}
-            </Badge>
+            <Badge variant="outline">{levelLabel(t, props.level)}</Badge>
           </div>
         </CardContent>
       </Card>
@@ -70,8 +91,9 @@ export function SettingsForm(props: SettingsFormProps) {
             <Select
               value={goal}
               onValueChange={(v) => {
+                const previous = goal;
                 setGoal(v as LearningGoal);
-                save({ learningGoal: v as LearningGoal });
+                void save({ learningGoal: v as LearningGoal }, () => setGoal(previous));
               }}
             >
               <SelectTrigger>
@@ -92,8 +114,9 @@ export function SettingsForm(props: SettingsFormProps) {
             <Select
               value={style}
               onValueChange={(v) => {
+                const previous = style;
                 setStyle(v as LearningStyle);
-                save({ learningStyle: v as LearningStyle });
+                void save({ learningStyle: v as LearningStyle }, () => setStyle(previous));
               }}
             >
               <SelectTrigger>
@@ -114,8 +137,9 @@ export function SettingsForm(props: SettingsFormProps) {
             <Select
               value={time}
               onValueChange={(v) => {
+                const previous = time;
                 setTime(v as DailyTime);
-                save({ dailyTime: v as DailyTime });
+                void save({ dailyTime: v as DailyTime }, () => setTime(previous));
               }}
             >
               <SelectTrigger>
@@ -129,6 +153,7 @@ export function SettingsForm(props: SettingsFormProps) {
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">{t.settings.availableTimeHint}</p>
           </div>
 
           <div className="space-y-2">
@@ -148,9 +173,14 @@ export function SettingsForm(props: SettingsFormProps) {
           </div>
 
           {saved && (
-            <p className="flex items-center gap-1.5 text-xs text-mastery-strong">
+            <p role="status" className="flex items-center gap-1.5 text-xs text-mastery-strong">
               <Check className="h-3.5 w-3.5" aria-hidden />
               {t.common.saved}
+            </p>
+          )}
+          {saveError && (
+            <p role="alert" className="text-xs text-destructive">
+              {saveError}
             </p>
           )}
         </CardContent>

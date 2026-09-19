@@ -148,8 +148,9 @@ export function SidebarNav() {
         </span>
       </header>
 
+      {/* z-50: must sit above the always-visible feedback button (z-40, later in the DOM), which would otherwise float over the backdrop. */}
       {menuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={closeMenu} aria-hidden />
           <aside
             id="mobile-nav"

@@ -94,6 +94,8 @@ export async function POST(req: Request) {
     if (body.sessionId) {
       await convexMutation(api.sessions.incrementSessionProgress, {
         sessionId: body.sessionId as Id<"sessions">,
+        // So a revised resubmission of the same exercise isn't counted twice.
+        exerciseId,
       });
     }
 

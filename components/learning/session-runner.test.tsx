@@ -63,17 +63,37 @@ let script: ScriptedEvaluation[];
 let evaluateCalls: number;
 let exerciseNumber: number;
 let exerciseOverride: Record<string, unknown>;
+// Statuses for successive /api/concept calls (the last one repeats).
+let conceptStatuses: number[];
+let conceptCalls: number;
+
+const CONCEPT = {
+  topic: "Closures",
+  subtopic: "Closures",
+  explanation: "Closures capture their scope.",
+  keyPoints: ["They remember variables", "They outlive the function call"],
+  example: null,
+};
+
+const startSessionMock = vi.fn();
 
 beforeEach(() => {
   localStorage.clear();
+  startSessionMock.mockReset().mockResolvedValue("session1");
   script = [{ result: "incorrect", xp: 15, before: 10, after: 14 }];
   evaluateCalls = 0;
   exerciseNumber = 0;
   exerciseOverride = {};
-  vi.mocked(useMutation).mockReturnValue(vi.fn().mockResolvedValue("session1") as never);
+  conceptStatuses = [200];
+  conceptCalls = 0;
+  vi.mocked(useMutation).mockReturnValue(startSessionMock as never);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
+      if (url === "/api/concept") {
+        const status = conceptStatuses[Math.min(conceptCalls++, conceptStatuses.length - 1)]!;
+        return status === 200 ? jsonResponse({ concept: CONCEPT }) : new Response("{}", { status });
+      }
       if (url === "/api/exercise") {
         exerciseNumber++;
         return jsonResponse({
@@ -100,7 +120,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderRunner() {
+function renderRunner(props: Partial<React.ComponentProps<typeof SessionRunner>> = {}) {
   return render(
     <SessionRunner
       userId={"user1" as never}
@@ -109,6 +129,7 @@ function renderRunner() {
       topicSummary="Functions that remember their scope."
       masteryOverall={0}
       mode="practice"
+      {...props}
     />
   );
 }
@@ -196,9 +217,10 @@ describe("SessionRunner", () => {
 
     // Not the generic error screen ("Try again" there would fetch a new
     // exercise and wipe the answer): still on the exercise, message shown.
-    expect(await screen.findByText("Could not evaluate your answer. Try again.")).toBeInTheDocument();
+    // A 502 from the route means the AI failed, and the message says so.
+    expect(await screen.findByText("The AI service is having trouble right now. Try again in a moment.")).toBeInTheDocument();
     // Announced to screen readers, not just shown.
-    expect(screen.getByRole("alert")).toHaveTextContent("Could not evaluate your answer. Try again.");
+    expect(screen.getByRole("alert")).toHaveTextContent("The AI service is having trouble right now.");
     expect(screen.getByLabelText("code")).toHaveValue("const mine = 1;");
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
     const exerciseCalls = () => vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/exercise").length;
@@ -428,5 +450,238 @@ describe("SessionRunner", () => {
     expect(await screen.findByRole("button", { name: "Next exercise" })).toBeInTheDocument();
     const call = vi.mocked(fetch).mock.calls.find(([u]) => u === "/api/evaluate")!;
     expect(JSON.parse(call[1]!.body as string).submittedAnswer).toBe("const done = true;");
+  });
+
+  describe("says what actually went wrong when a review fails", () => {
+    async function submitWith(failure: () => Response | Promise<Response>) {
+      const user = userEvent.setup();
+      renderRunner();
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await user.type(await screen.findByLabelText("code"), " x");
+
+      const original = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (url, init) => (url === "/api/evaluate" ? failure() : original(url, init)));
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+    }
+
+    it("an expired session tells the learner to sign in again (their work is kept)", async () => {
+      await submitWith(() => new Response(JSON.stringify({ error: "unauthenticated" }), { status: 401 }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Your session has expired. Reload the page to sign in again.");
+      expect(screen.getByLabelText("code")).toHaveValue("// starter x");
+    });
+
+    it("being offline says so", async () => {
+      await submitWith(() => {
+        throw new TypeError("Failed to fetch");
+      });
+      expect(await screen.findByRole("alert")).toHaveTextContent("Can’t reach the server. Check your connection and try again.");
+    });
+
+    it("an unclassified server error falls back to the feature's own message", async () => {
+      await submitWith(() => new Response(JSON.stringify({ error: "internal_error" }), { status: 500 }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Could not evaluate your answer. Try again.");
+    });
+  });
+
+  describe("session length follows the learner's daily time", () => {
+    async function playOne(user: ReturnType<typeof userEvent.setup>) {
+      await user.type(await screen.findByLabelText("code"), " x");
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await user.click(await screen.findByRole("button", { name: "Next exercise" }));
+    }
+
+    it("tells the learner how long the session is and why", () => {
+      renderRunner({ dailyTime: "15min" });
+      expect(screen.getByText("3 exercises, sized to your 15 min / day")).toBeInTheDocument();
+    });
+
+    it("says nothing about sizing when no daily time is given, and keeps the default of 5", async () => {
+      const user = userEvent.setup();
+      renderRunner();
+      expect(screen.queryByText(/sized to your/)).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      expect(await screen.findByText("0 / 5")).toBeInTheDocument();
+      expect(startSessionMock).toHaveBeenCalledWith(expect.objectContaining({ exercisesPlanned: 5 }));
+    });
+
+    it("a 15-minute learner gets a 3-exercise session that ends after 3", async () => {
+      script = [{ result: "correct", xp: 100, before: 10, after: 12 }];
+      const user = userEvent.setup();
+      renderRunner({ dailyTime: "15min" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+
+      expect(await screen.findByText("0 / 3")).toBeInTheDocument();
+      expect(startSessionMock).toHaveBeenCalledWith(expect.objectContaining({ exercisesPlanned: 3 }));
+
+      for (let i = 0; i < 3; i++) await playOne(user);
+
+      expect(await screen.findByText("Session complete")).toBeInTheDocument();
+      expect(screen.getByText("3 exercises reviewed on Closures.")).toBeInTheDocument();
+      expect(screen.getByText("3 of 3 correct")).toBeInTheDocument();
+    });
+
+    it("a learner with 2+ hours is not cut off at 5", async () => {
+      script = [{ result: "correct", xp: 100, before: 10, after: 12 }];
+      const user = userEvent.setup();
+      renderRunner({ dailyTime: "2hr_plus" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      expect(await screen.findByText("0 / 12")).toBeInTheDocument();
+
+      for (let i = 0; i < 5; i++) await playOne(user);
+
+      expect(screen.queryByText("Session complete")).not.toBeInTheDocument();
+      expect(await screen.findByText("5 / 12")).toBeInTheDocument();
+    });
+
+    it("a resumed session keeps the length it started with, even if the setting changed since", async () => {
+      const user = userEvent.setup();
+      const first = renderRunner({ dailyTime: "15min" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await playOne(user);
+      first.unmount();
+
+      renderRunner({ dailyTime: "1hr" }); // learner has since switched to 1 hour
+      expect(await screen.findByText(/completed 1 of 3 exercises/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Resume/ }));
+      expect(await screen.findByText("1 / 3")).toBeInTheDocument();
+
+      await playOne(user);
+      await playOne(user);
+      expect(await screen.findByText("Session complete")).toBeInTheDocument();
+    });
+
+    it("'Another round' picks up the current preference", async () => {
+      const user = userEvent.setup();
+      renderRunner({ dailyTime: "15min" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      for (let i = 0; i < 3; i++) await playOne(user);
+      await screen.findByText("Session complete");
+
+      await user.click(screen.getByRole("button", { name: "Another round" }));
+
+      expect(await screen.findByText("0 / 3")).toBeInTheDocument();
+      expect(startSessionMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("learn mode: the concept overview", () => {
+    const CONCEPT_KEY = "unsparing:draft:concept:topic1:en";
+    const SNAPSHOT_KEY = "unsparing:draft:session:learn:topic1";
+    const conceptFetches = () => vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/concept").length;
+
+    it("is requested as soon as the intro shows, so Start doesn't wait for a second request", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+
+      await waitFor(() => expect(conceptFetches()).toBe(1)); // before any click
+
+      await user.click(screen.getByRole("button", { name: "Start session" }));
+      expect(await screen.findByText("Closures capture their scope.")).toBeInTheDocument();
+      expect(conceptFetches()).toBe(1);
+    });
+
+    it("is cached, so the next visit costs no request at all", async () => {
+      const user = userEvent.setup();
+      const first = renderRunner({ mode: "learn" });
+      await waitFor(() => expect(localStorage.getItem(CONCEPT_KEY)).not.toBeNull());
+      first.unmount();
+      vi.mocked(fetch).mockClear();
+
+      renderRunner({ mode: "learn" });
+      await user.click(screen.getByRole("button", { name: "Start session" }));
+
+      expect(await screen.findByText("Closures capture their scope.")).toBeInTheDocument();
+      expect(conceptFetches()).toBe(0);
+    });
+
+    it("retries once at Start if the background request missed, then shows the concept", async () => {
+      conceptStatuses = [500, 200];
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+      await waitFor(() => expect(conceptFetches()).toBe(1));
+
+      await user.click(screen.getByRole("button", { name: "Start session" }));
+
+      expect(await screen.findByText("Closures capture their scope.")).toBeInTheDocument();
+      expect(conceptFetches()).toBe(2);
+    });
+
+    it("goes straight to the exercises if the concept can't be produced - theory is optional", async () => {
+      conceptStatuses = [500];
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+      await waitFor(() => expect(conceptFetches()).toBe(1));
+
+      await user.click(screen.getByRole("button", { name: "Start session" }));
+
+      expect(await screen.findByLabelText("code")).toBeInTheDocument();
+      expect(conceptFetches()).toBe(2); // the prefetch plus the single retry, no more
+      expect(screen.queryByRole("button", { name: "Show theory" })).not.toBeInTheDocument();
+    });
+
+    it("is never requested in practice mode", async () => {
+      renderRunner({ mode: "practice" });
+      await screen.findByRole("button", { name: "Start practicing" });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(conceptFetches()).toBe(0);
+    });
+
+    it("is not prefetched while an unfinished session is on offer, but is fetched if they start over", async () => {
+      localStorage.setItem(
+        SNAPSHOT_KEY,
+        JSON.stringify({
+          v: {
+            sessionId: "session1",
+            completedCount: 1,
+            exercise: { ...EXERCISE },
+            exerciseId: "ex1",
+            answer: "",
+            hints: [],
+            solutionRevealed: false,
+            challengeMode: false,
+            planned: 5,
+          },
+          t: Date.now(),
+        })
+      );
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+      await screen.findByText("Unfinished session");
+      await new Promise((r) => setTimeout(r, 20));
+      expect(conceptFetches()).toBe(0);
+
+      await user.click(screen.getByRole("button", { name: "Start over" }));
+      expect(await screen.findByText("Closures capture their scope.")).toBeInTheDocument();
+      expect(conceptFetches()).toBe(1);
+    });
+
+    it("brings back 'Show theory' when resuming, if the overview is still cached", async () => {
+      localStorage.setItem(CONCEPT_KEY, JSON.stringify({ v: CONCEPT, t: Date.now() }));
+      localStorage.setItem(
+        SNAPSHOT_KEY,
+        JSON.stringify({
+          v: {
+            sessionId: "session1",
+            completedCount: 0,
+            exercise: { ...EXERCISE },
+            exerciseId: "ex1",
+            answer: "",
+            hints: [],
+            solutionRevealed: false,
+            challengeMode: false,
+            planned: 5,
+          },
+          t: Date.now(),
+        })
+      );
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+
+      await user.click(await screen.findByRole("button", { name: /Resume/ }));
+
+      expect(await screen.findByRole("button", { name: "Show theory" })).toBeInTheDocument();
+      expect(conceptFetches()).toBe(0);
+    });
   });
 });

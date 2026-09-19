@@ -139,4 +139,26 @@ describe("PracticeBoard", () => {
       await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
     });
   });
+
+  it("reports why generating problems failed, using the specific cause when there is one", async () => {
+    mockQueries({ path: {}, topics: [TOPIC_A] }, [problem({})]);
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ error: "unauthenticated" }), { status: 401 }));
+    const user = userEvent.setup();
+    render(<PracticeBoard userId={"user1" as never} />);
+
+    await user.click(screen.getByRole("button", { name: /Generate more problems/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your session has expired. Reload the page to sign in again.");
+  });
+
+  it("falls back to the board's own message for an unclassified failure", async () => {
+    mockQueries({ path: {}, topics: [TOPIC_A] }, [problem({})]);
+    vi.mocked(fetch).mockResolvedValue(new Response("{}", { status: 500 }));
+    const user = userEvent.setup();
+    render(<PracticeBoard userId={"user1" as never} />);
+
+    await user.click(screen.getByRole("button", { name: /Generate more problems/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not generate problems for that topic. Try again.");
+  });
 });

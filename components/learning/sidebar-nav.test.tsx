@@ -81,6 +81,15 @@ describe("SidebarNav", () => {
       expect(within(drawer()!).getByRole("link", { name: /Practice/ })).toHaveAttribute("href", "/practice");
     });
 
+    it("stacks above the fixed feedback button (z-40), which comes later in the DOM", async () => {
+      const user = userEvent.setup();
+      render(<SidebarNav />);
+      await user.click(screen.getByRole("button", { name: "Open menu" }));
+
+      const overlay = drawer()!.parentElement!;
+      expect(overlay.className).toContain("z-50");
+    });
+
     it("closes with the close button, Escape, or a tap on the backdrop", async () => {
       const user = userEvent.setup();
       render(<SidebarNav />);

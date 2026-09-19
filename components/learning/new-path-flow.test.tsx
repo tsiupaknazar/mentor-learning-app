@@ -52,7 +52,7 @@ describe("NewPathFlow", () => {
     await user.click(screen.getByRole("button", { name: "Node.js" })); // suggested topic chip
     await user.click(screen.getByRole("button", { name: /Generate|Start/ }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not generate your learning path. Try again.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The AI service is having trouble right now. Try again in a moment.");
     await user.click(screen.getByRole("button", { name: "Try again" }));
 
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));

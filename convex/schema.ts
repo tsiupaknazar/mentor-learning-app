@@ -263,7 +263,9 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_exercise", ["exerciseId"])
-    .index("by_user_and_topic", ["userId", "topicId"]),
+    .index("by_user_and_topic", ["userId", "topicId"])
+    // Range-scan a learner's recent attempts (activity calendar) without reading their whole history.
+    .index("by_user_and_submitted", ["userId", "submittedAt"]),
 
   mistakes: defineTable({
     userId: v.id("users"),

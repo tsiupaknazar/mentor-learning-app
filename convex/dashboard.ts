@@ -130,9 +130,10 @@ export const getDashboardSummary = query({
     // in-progress topic with the lowest mastery, then the first not-started
     // topic in learning-path order.
     const now = Date.now();
-    const dueForReview = pathProgress
+    const dueList = pathProgress
       .filter((p) => p.nextReviewDue !== undefined && p.nextReviewDue <= now && p.status !== "mastered" && !isLocked(p.topicId))
-      .sort((a, b) => (a.nextReviewDue ?? 0) - (b.nextReviewDue ?? 0))[0];
+      .sort((a, b) => (a.nextReviewDue ?? 0) - (b.nextReviewDue ?? 0));
+    const dueForReview = dueList[0];
 
     const inProgress = pathProgress
       .filter((p) => (p.status === "in_progress" || p.status === "needs_review") && !isLocked(p.topicId))
@@ -184,6 +185,9 @@ export const getDashboardSummary = query({
       topicsCount: topics.length,
       topicsMastered: pathProgress.filter((p) => p.status === "mastered").length,
       openMistakesCount: openMistakesCount.length,
+      // Topics due for spaced-repetition review (same rules as the pick above),
+      // so the dashboard can say how many are waiting, not just the first.
+      reviewsDue: dueList.length,
       nextAction,
     };
   },

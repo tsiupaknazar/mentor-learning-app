@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 
 type Category = "bug" | "idea" | "other";
 type Status = "idle" | "submitting" | "sent" | "error";
@@ -33,6 +34,7 @@ export function FeedbackButton() {
   const [category, setCategory] = useState<Category>("idea");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState<Status>("idle");
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   const categories: { value: Category; label: string }[] = [
     { value: "bug", label: t.feedbackForm.categoryBug },
@@ -50,14 +52,10 @@ export function FeedbackButton() {
     if (!message.trim() || status === "submitting") return;
     setStatus("submitting");
     try {
-      const res = await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, category, route: pathname }),
-      });
-      if (!res.ok) throw new Error("failed");
+      await apiFetch("/api/feedback", { message, category, route: pathname });
       setStatus("sent");
-    } catch {
+    } catch (e) {
+      setErrorMessage(apiErrorMessage(e, t, t.feedbackForm.errorBody));
       setStatus("error");
     }
   }
@@ -73,10 +71,11 @@ export function FeedbackButton() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2.5 text-xs font-medium text-foreground shadow-lg transition-colors hover:border-accent/50 hover:bg-muted"
+        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full border border-border bg-card p-3 text-xs font-medium sm:bottom-5 sm:right-5 sm:px-4 sm:py-2.5 text-foreground shadow-lg transition-colors hover:border-accent/50 hover:bg-muted"
       >
         <MessageSquarePlus className="h-4 w-4" aria-hidden />
-        {t.feedbackForm.buttonLabel}
+        {/* Icon-only on phones, where a full label would cover the bottom-right of the page. */}
+        <span className="sr-only sm:not-sr-only">{t.feedbackForm.buttonLabel}</span>
       </button>
 
       <DialogContent className="sm:max-w-md">
@@ -131,7 +130,7 @@ export function FeedbackButton() {
                 />
               </div>
 
-              {status === "error" && <p role="alert" className="text-sm text-destructive">{t.feedbackForm.errorBody}</p>}
+              {status === "error" && <p role="alert" className="text-sm text-destructive">{errorMessage}</p>}
 
               <Button onClick={handleSubmit} disabled={!message.trim() || status === "submitting"} className="w-full">
                 {status === "submitting" ? (

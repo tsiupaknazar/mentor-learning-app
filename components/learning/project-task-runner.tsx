@@ -15,6 +15,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { useContentTranslation } from "@/lib/i18n/use-content-translation";
 import { track } from "@/lib/analytics/track";
 import { useDraft } from "@/lib/drafts";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 
 type DraftFiles = Array<{ filename: string; content: string }>;
 
@@ -121,16 +122,13 @@ function ProjectTaskRunnerBody({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/project/review", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectTaskId: taskId, files }),
+      const data = await apiFetch<{ review: Review; taskStatus: typeof status }>("/api/project/review", {
+        projectTaskId: taskId,
+        files,
       });
-      if (!res.ok) throw new Error(t.taskRunner.couldNotReview);
-      const data = await res.json();
-      const nextStatus = data.taskStatus as typeof status;
+      const nextStatus = data.taskStatus;
       scrollToReviewRef.current = true;
-      setReview(data.review as Review);
+      setReview(data.review);
       setStatus(nextStatus);
       // The submission is now the saved state (it becomes the next starting
       // point), so the local draft would only be stale.
@@ -139,11 +137,11 @@ function ProjectTaskRunnerBody({
       track("project_task_reviewed", {
         projectId,
         taskCode,
-        verdict: (data.review as Review).verdict,
+        verdict: data.review.verdict,
         status: nextStatus,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.taskRunner.genericError);
+      setError(apiErrorMessage(e, t, t.taskRunner.couldNotReview));
     } finally {
       setSubmitting(false);
     }

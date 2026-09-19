@@ -12,6 +12,11 @@ export interface Dictionary {
     somethingWentWrong: string;
     back: string;
     stillWorking: string;
+    sessionExpired: string;
+    offline: string;
+    aiBusy: string;
+    aiUnavailable: string;
+    rateLimited: string;
   };
   sidebar: {
     appName: string;
@@ -99,6 +104,8 @@ export interface Dictionary {
     learningGoal: string;
     learningStyle: string;
     availableTime: string;
+    couldNotSave: string;
+    availableTimeHint: string;
     language: string;
     languageNames: Record<Locale, string>;
   };
@@ -116,6 +123,8 @@ export interface Dictionary {
     xp: string;
     needsReview: string;
     viewAll: string;
+    reviewButton: string;
+    moreReviewsDue: (count: number) => string;
   };
   learn: {
     eyebrow: string;
@@ -199,6 +208,7 @@ export interface Dictionary {
     couldNotStartSession: string;
     couldNotEvaluate: string;
     challenge: string;
+    sizedFor: (count: number, time: string) => string;
     conceptSteps: string[];
     exerciseSteps: string[];
     reviewSteps: string[];
@@ -264,6 +274,8 @@ export interface Dictionary {
     eyebrow: string;
     noActivePath: string;
     notAttempted: string;
+    reviewDue: string;
+    weakestAxis: (axis: string, value: number) => string;
     axes: Record<"knowledge" | "application" | "debugging" | "explanation" | "retention", string>;
   };
   mistakes: {
@@ -291,6 +303,13 @@ export interface Dictionary {
     totalXp: string;
     recentSessions: string;
     noSessions: string;
+    activityTitle: string;
+    activitySummary: (total: number, activeDays: number) => string;
+    activityCell: (date: string, count: number) => string;
+    activityLess: string;
+    activityMore: string;
+    sessionCompleted: string;
+    sessionInProgress: string;
   };
   achievements: {
     sectionTitle: string;
@@ -320,6 +339,8 @@ export interface Dictionary {
     subtitle: string;
     noProjects: string;
     tasksCount: (done: number, total: number) => string;
+    continueTask: (code: string) => string;
+    allTasksDone: string;
     statusLabels: Record<"not_started" | "in_progress" | "completed", string>;
     newProject: {
       startButton: string;
@@ -328,6 +349,7 @@ export interface Dictionary {
       levelLabel: string;
       generate: string;
       scopingTasks: string;
+      buildingSteps: string[];
       cancel: string;
       enterTopicError: string;
       genericError: string;
@@ -405,6 +427,11 @@ const en: Dictionary = {
     somethingWentWrong: "Something went wrong.",
     back: "Back",
     stillWorking: "Still working \u2014 this can take a moment.",
+    sessionExpired: "Your session has expired. Reload the page to sign in again.",
+    offline: "Can\u2019t reach the server. Check your connection and try again.",
+    aiBusy: "The AI service is having trouble right now. Try again in a moment.",
+    aiUnavailable: "This feature is temporarily unavailable. Please try again later.",
+    rateLimited: "You\u2019re going a bit fast. Wait a moment and try again.",
   },
   sidebar: {
     appName: "unsparing",
@@ -534,6 +561,8 @@ const en: Dictionary = {
     learningGoal: "Learning goal",
     learningStyle: "Learning style",
     availableTime: "Available time",
+    couldNotSave: "Couldn\u2019t save that change. Your previous setting was kept.",
+    availableTimeHint: "Sets how many exercises a session has. Applies from your next session.",
     language: "Language",
     languageNames: { en: "English", uk: "Ukrainian" },
   },
@@ -555,6 +584,8 @@ const en: Dictionary = {
     xp: "XP",
     needsReview: "Needs review",
     viewAll: "View all",
+    reviewButton: "Start review",
+    moreReviewsDue: (count) => (count === 1 ? "1 more topic is due for review" : `${count} more topics are due for review`),
   },
   learn: {
     eyebrow: "Learning path",
@@ -639,6 +670,7 @@ const en: Dictionary = {
     couldNotStartSession: "Could not start the session. Try again.",
     couldNotEvaluate: "Could not evaluate your answer. Try again.",
     challenge: "challenge",
+    sizedFor: (count, time) => `${count} exercises, sized to your ${time}`,
     conceptSteps: ["Picking the key ideas\u2026", "Writing the examples\u2026"],
     exerciseSteps: ["Tuning the difficulty to your level\u2026", "Writing the exercise\u2026"],
     reviewSteps: ["Checking correctness and edge cases\u2026", "Writing your feedback\u2026"],
@@ -719,6 +751,8 @@ const en: Dictionary = {
     eyebrow: "Knowledge map",
     noActivePath: "No active learning path yet.",
     notAttempted: "Not attempted yet.",
+    reviewDue: "Review due",
+    weakestAxis: (axis, value) => `Weakest: ${axis} (${value}%)`,
     axes: {
       knowledge: "Knowledge",
       application: "Application",
@@ -753,6 +787,13 @@ const en: Dictionary = {
     totalXp: "Total XP",
     recentSessions: "Recent sessions",
     noSessions: "No sessions yet.",
+    activityTitle: "Activity, last 12 weeks",
+    activitySummary: (total, activeDays) => `${total} answers on ${activeDays} active days`,
+    activityCell: (date, count) => (count === 1 ? `${date}: 1 answer` : `${date}: ${count} answers`),
+    activityLess: "Less",
+    activityMore: "More",
+    sessionCompleted: "completed",
+    sessionInProgress: "in progress",
   },
   achievements: {
     sectionTitle: "Achievements",
@@ -781,6 +822,8 @@ const en: Dictionary = {
       "Scoped like real tickets, reviewed like a real pull request \u2014 a mentor acting as your tech lead breaks the work into tasks and reviews each submission against concrete requirements.",
     noProjects: "No projects yet \u2014 start one above.",
     tasksCount: (done, total) => `${done} / ${total} tasks`,
+    continueTask: (code) => `Continue with ${code}`,
+    allTasksDone: "All tasks approved",
     statusLabels: {
       not_started: "not started",
       in_progress: "in progress",
@@ -793,6 +836,7 @@ const en: Dictionary = {
       levelLabel: "Level",
       generate: "Generate project",
       scopingTasks: "Scoping tasks\u2026",
+      buildingSteps: ["Breaking it into tickets\u2026", "Writing the requirements\u2026", "Setting up the starter files\u2026"],
       cancel: "Cancel",
       enterTopicError: "Enter a topic for the project.",
       genericError: "Could not generate a project. Try again.",
@@ -847,9 +891,9 @@ const en: Dictionary = {
     timedOut: "Timed out after 3s (possible infinite loop).",
   },
   interview: {
-    title: "Interview mode \u2014 not yet implemented",
+    title: "Interview practice \u2014 coming soon",
     body1:
-      "Ask \u2192 wait \u2192 challenge \u2192 follow-up \u2192 full-conversation evaluation. Planned after the core learning loop ships (see MVP scope). The mentor persona and Gemini wrapper it will reuse already exist in",
+      "Mock interviews where the mentor asks a question, challenges your answer, follows up, and then evaluates the whole conversation. It isn\u2019t available yet.",
   },
   feedbackForm: {
     buttonLabel: "Feedback",
@@ -880,6 +924,11 @@ const uk: Dictionary = {
     somethingWentWrong: "Щось пішло не так.",
     back: "Назад",
     stillWorking: "Ще працюємо \u2014 це може зайняти трохи часу.",
+    sessionExpired: "Сесія завершилася. Перезавантажте сторінку, щоб увійти знову.",
+    offline: "Не вдається зв\u2019язатися із сервером. Перевірте з\u2019єднання й спробуйте ще раз.",
+    aiBusy: "Сервіс ШІ зараз має проблеми. Спробуйте за хвилину.",
+    aiUnavailable: "Ця функція тимчасово недоступна. Спробуйте пізніше.",
+    rateLimited: "Ви дещо поспішаєте. Зачекайте трохи й спробуйте ще раз.",
   },
   sidebar: {
     appName: "unsparing",
@@ -1018,6 +1067,8 @@ const uk: Dictionary = {
     learningGoal: "Мета навчання",
     learningStyle: "Стиль навчання",
     availableTime: "Доступний час",
+    couldNotSave: "Не вдалося зберегти зміну. Попереднє значення збережено.",
+    availableTimeHint: "Визначає, скільки вправ у сесії. Діє з наступної сесії.",
     language: "Мова",
     languageNames: { en: "English", uk: "Українська" },
   },
@@ -1039,6 +1090,8 @@ const uk: Dictionary = {
     xp: "Досвід (XP)",
     needsReview: "Потребує повторення",
     viewAll: "Переглянути всі",
+    reviewButton: "Почати повторення",
+    moreReviewsDue: (count) => `Ще тем для повторення: ${count}`,
   },
   learn: {
     eyebrow: "Навчальний шлях",
@@ -1123,6 +1176,7 @@ const uk: Dictionary = {
     couldNotStartSession: "Не вдалося розпочати сесію. Спробуйте ще раз.",
     couldNotEvaluate: "Не вдалося оцінити вашу відповідь. Спробуйте ще раз.",
     challenge: "виклик",
+    sizedFor: (count, time) => `Вправ: ${count} — підібрано під ваш час (${time})`,
     conceptSteps: ["Добираємо ключові ідеї\u2026", "Пишемо приклади\u2026"],
     exerciseSteps: ["Підлаштовуємо складність під ваш рівень\u2026", "Пишемо вправу\u2026"],
     reviewSteps: ["Перевіряємо правильність і крайні випадки\u2026", "Пишемо відгук\u2026"],
@@ -1203,6 +1257,8 @@ const uk: Dictionary = {
     eyebrow: "Карта знань",
     noActivePath: "Активного навчального шляху ще немає.",
     notAttempted: "Ще не спробовано.",
+    reviewDue: "Час повторити",
+    weakestAxis: (axis, value) => `Найслабше: ${axis} (${value}%)`,
     axes: {
       knowledge: "Знання",
       application: "Застосування",
@@ -1237,6 +1293,13 @@ const uk: Dictionary = {
     totalXp: "Всього XP",
     recentSessions: "Останні сесії",
     noSessions: "Сесій поки немає.",
+    activityTitle: "Активність за останні 12 тижнів",
+    activitySummary: (total, activeDays) => `Відповідей: ${total}, активних днів: ${activeDays}`,
+    activityCell: (date, count) => `${date}: відповідей — ${count}`,
+    activityLess: "Менше",
+    activityMore: "Більше",
+    sessionCompleted: "завершено",
+    sessionInProgress: "триває",
   },
   achievements: {
     sectionTitle: "Досягнення",
@@ -1265,6 +1328,8 @@ const uk: Dictionary = {
       "Сплановані як справжні тікети, перевіряються як справжній пул-реквест — ментор у ролі вашого тімліда розбиває роботу на задачі й перевіряє кожне рішення за конкретними вимогами.",
     noProjects: "Проєктів поки немає — почніть новий вище.",
     tasksCount: (done, total) => `${done} / ${total} завдань`,
+    continueTask: (code) => `Продовжити з ${code}`,
+    allTasksDone: "Усі завдання схвалено",
     statusLabels: {
       not_started: "не розпочато",
       in_progress: "в процесі",
@@ -1277,6 +1342,7 @@ const uk: Dictionary = {
       levelLabel: "Рівень",
       generate: "Створити проєкт",
       scopingTasks: "Плануємо завдання…",
+      buildingSteps: ["Розбиваємо на завдання…", "Пишемо вимоги…", "Готуємо стартові файли…"],
       cancel: "Скасувати",
       enterTopicError: "Введіть тему для проєкту.",
       genericError: "Не вдалося створити проєкт. Спробуйте ще раз.",
@@ -1331,9 +1397,9 @@ const uk: Dictionary = {
     timedOut: "Час вийшов через 3с (можливо, нескінченний цикл).",
   },
   interview: {
-    title: "Режим співбесіди — ще не реалізовано",
+    title: "Практика співбесід — незабаром",
     body1:
-      "Запитання → очікування → виклик → уточнення → оцінка всієї розмови. Заплановано після запуску основного навчального циклу (див. обсяг MVP). Персона ментора та обгортка Gemini, які тут використовуватимуться, вже існують у",
+      "Пробні співбесіди: ментор ставить запитання, оскаржує вашу відповідь, уточнює, а потім оцінює всю розмову. Поки що це недоступно.",
   },
   feedbackForm: {
     buttonLabel: "Зворотний зв'язок",
@@ -1358,4 +1424,13 @@ export const dictionaries: Record<Locale, Dictionary> = { en, uk };
 
 export function getDictionary(locale: Locale): Dictionary {
   return dictionaries[locale] ?? dictionaries.en;
+}
+
+/**
+ * The learner-facing name of a skill level ("junior" -> "Junior" / "Джуніор").
+ * Levels are stored as bare keys, and rendering the key directly showed
+ * English to everyone; unknown values (e.g. legacy data) fall back to the raw string.
+ */
+export function levelLabel(t: Dictionary, level: string): string {
+  return (t.onboarding.levels as Record<string, string>)[level] ?? level;
 }

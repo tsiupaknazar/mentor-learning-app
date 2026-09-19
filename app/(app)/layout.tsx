@@ -32,7 +32,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-h-screen flex-col md:flex-row">
         <SidebarNav />
         <div className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-8">{children}</div>
+          {/* Extra bottom padding keeps the last row (Submit / Next buttons) clear of the fixed feedback button. */}
+          <div className="mx-auto max-w-5xl px-4 pb-24 pt-6 sm:px-6 sm:pt-8">{children}</div>
         </div>
       </div>
       <FeedbackButton />

@@ -4,16 +4,21 @@ import { api } from "@/convex/_generated/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Award } from "lucide-react";
 import { formatMastery } from "@/lib/utils";
+import { ActivityCalendar } from "@/components/learning/activity-calendar";
+import { SessionHistory, type SessionRow } from "@/components/learning/session-history";
+import { activityDaysNeeded } from "@/lib/activity";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 
 export default async function ProgressPage() {
   const user = await requireCurrentUser();
   const t = getDictionary(user.locale ?? "en");
-  const [summary, sessions, achievements] = await Promise.all([
+  const [summary, sessions, achievements, activity] = await Promise.all([
     convexQuery(api.dashboard.getDashboardSummary, { userId: user._id }),
     convexQuery(api.sessions.listRecentSessions, { userId: user._id, limit: 15 }),
     convexQuery(api.achievements.listAchievements, { userId: user._id }),
+    convexQuery(api.attempts.activityByDay, { userId: user._id, days: activityDaysNeeded(12) }),
   ]);
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   if (!summary) return null;
 
@@ -30,6 +35,8 @@ export default async function ProgressPage() {
         <MiniStat label={t.progress.longestStreak} value={`${summary.user.longestStreak}d`} />
         <MiniStat label={t.progress.totalXp} value={String(summary.user.totalXp)} />
       </div>
+
+      <ActivityCalendar days={activity} todayIso={todayIso} />
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t.achievements.sectionTitle}</h2>
@@ -63,33 +70,7 @@ export default async function ProgressPage() {
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t.progress.recentSessions}</h2>
-        {sessions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t.progress.noSessions}</p>
-        ) : (
-          <div className="space-y-2">
-            {sessions.map((s: {
-              _id: string;
-              objective: string;
-              startedAt: number;
-              exercisesCompleted: number;
-              exercisesPlanned: number;
-            }) => (
-              <Card key={s._id}>
-                <CardContent className="flex items-center justify-between p-4">
-                  <div>
-                    <p className="text-sm">{s.objective}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(s.startedAt).toLocaleString()}
-                    </p>
-                  </div>
-                  <span className="font-mono-tabular text-xs text-muted-foreground">
-                    {s.exercisesCompleted} / {s.exercisesPlanned}
-                  </span>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
+        <SessionHistory sessions={sessions as SessionRow[]} />
       </div>
     </div>
   );

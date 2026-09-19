@@ -128,3 +128,116 @@ describe("listRecentSessions", () => {
     expect(sessions[0]!.objective).toBe("second");
   });
 });
+
+type Ids = { userId: string; topicId: string };
+
+async function seedExercise(t: ReturnType<typeof convexTest>, { userId, topicId }: Ids, externalId: string) {
+  return t.run((ctx) =>
+    ctx.db.insert("exercises", {
+      userId: userId as never,
+      topicId: topicId as never,
+      externalId,
+      subtopic: "closures",
+      type: "debugging",
+      difficulty: "medium",
+      language: "javascript",
+      title: externalId,
+      prompt: "p",
+      referenceSolution: "s",
+      createdAt: Date.now(),
+    })
+  );
+}
+
+/** Records one attempt, as /api/evaluate's recordAttempt does just before it bumps the session. */
+async function addAttempt(t: ReturnType<typeof convexTest>, { userId, topicId }: Ids, exerciseId: string) {
+  await t.run((ctx) =>
+    ctx.db.insert("attempts", {
+      userId: userId as never,
+      exerciseId: exerciseId as never,
+      topicId: topicId as never,
+      submittedAnswer: "a",
+      hintsUsed: 0,
+      solutionRevealed: false,
+      result: "incorrect",
+      scores: { correctness: 0, logic: 0, codeQuality: 0, bestPractices: 0, edgeCaseHandling: 0 },
+      feedback: { whatYouDid: "w", nextStep: "n" },
+      submittedAt: Date.now(),
+    })
+  );
+}
+
+describe("incrementSessionProgress counts exercises, not submissions", () => {
+  async function setup(planned: number) {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { topicId } = await seedTopic(t, userId);
+    const sessionId = await t.mutation(api.sessions.startSession, { userId, topicId, objective: "o", exercisesPlanned: planned });
+    return { t, ids: { userId, topicId }, sessionId };
+  }
+
+  it("does not count a revised resubmission of the same exercise a second time", async () => {
+    const { t, ids, sessionId } = await setup(3);
+    const exerciseId = await seedExercise(t, ids, "e1");
+
+    // First submission -> counts.
+    await addAttempt(t, ids, exerciseId);
+    await t.mutation(api.sessions.incrementSessionProgress, { sessionId, exerciseId });
+    expect((await t.query(api.sessions.getSession, { sessionId }))?.exercisesCompleted).toBe(1);
+
+    // "Revise and resubmit": a second attempt on the SAME exercise -> does not.
+    await addAttempt(t, ids, exerciseId);
+    await t.mutation(api.sessions.incrementSessionProgress, { sessionId, exerciseId });
+    expect((await t.query(api.sessions.getSession, { sessionId }))?.exercisesCompleted).toBe(1);
+  });
+
+  it("only completes the session once the planned number of DIFFERENT exercises are done", async () => {
+    const { t, ids, sessionId } = await setup(2);
+    const first = await seedExercise(t, ids, "e1");
+    const second = await seedExercise(t, ids, "e2");
+
+    // Exercise 1 submitted twice (revised), exercise 2 not yet.
+    for (let i = 0; i < 2; i++) {
+      await addAttempt(t, ids, first);
+      await t.mutation(api.sessions.incrementSessionProgress, { sessionId, exerciseId: first });
+    }
+    let session = await t.query(api.sessions.getSession, { sessionId });
+    expect(session?.exercisesCompleted).toBe(1);
+    expect(session?.completedAt).toBeUndefined(); // previously "complete" after just 2 submissions
+
+    await addAttempt(t, ids, second);
+    await t.mutation(api.sessions.incrementSessionProgress, { sessionId, exerciseId: second });
+    session = await t.query(api.sessions.getSession, { sessionId });
+    expect(session?.exercisesCompleted).toBe(2);
+    expect(session?.completedAt).toBeDefined();
+  });
+
+  it("still counts every call when no exercise id is given (older callers)", async () => {
+    const { t, sessionId } = await setup(3);
+    await t.mutation(api.sessions.incrementSessionProgress, { sessionId });
+    await t.mutation(api.sessions.incrementSessionProgress, { sessionId });
+    expect((await t.query(api.sessions.getSession, { sessionId }))?.exercisesCompleted).toBe(2);
+  });
+
+  it("never reports more completed than planned", async () => {
+    const { t, sessionId } = await setup(2);
+    for (let i = 0; i < 5; i++) await t.mutation(api.sessions.incrementSessionProgress, { sessionId });
+    expect((await t.query(api.sessions.getSession, { sessionId }))?.exercisesCompleted).toBe(2);
+  });
+});
+
+describe("listRecentSessions topic titles", () => {
+  it("includes each session's topic title, or null if the topic is gone", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { topicId } = await seedTopic(t, userId, { title: "Closures" });
+    const other = await seedTopic(t, userId, { title: "Promises" });
+    await t.mutation(api.sessions.startSession, { userId, topicId, objective: "o", exercisesPlanned: 1 });
+    await t.mutation(api.sessions.startSession, { userId, topicId: other.topicId, objective: "o", exercisesPlanned: 1 });
+    await t.run((ctx) => ctx.db.delete(other.topicId));
+
+    const sessions = await t.query(api.sessions.listRecentSessions, { userId });
+
+    expect(sessions.map((s) => s.topicTitle)).toEqual([null, "Closures"]); // newest first
+  });
+});

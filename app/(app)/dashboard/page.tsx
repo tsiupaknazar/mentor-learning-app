@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatMastery } from "@/lib/utils";
 import { getDictionary } from "@/lib/i18n/dictionaries";
+import { nextActionTarget, type NextActionKind } from "@/lib/next-action";
 
 export default async function DashboardPage() {
   const user = await requireCurrentUser();
@@ -20,6 +21,9 @@ export default async function DashboardPage() {
 
   const nextActionKind = summary.nextAction?.kind as "review" | "continue" | "start" | undefined;
   const actionCopy = nextActionKind ? t.dashboard.nextActionCopy[nextActionKind] : null;
+  const { href: actionHref, isReview } = summary.nextAction
+    ? nextActionTarget(summary.nextAction.kind as NextActionKind, summary.nextAction.topicId)
+    : { href: "/learn", isReview: false };
 
   const stats: { label: string; value: string }[] = [
     { label: t.dashboard.overallMastery, value: formatMastery(summary.overallMastery) },
@@ -67,10 +71,13 @@ export default async function DashboardPage() {
                   {t.dashboard.masterySoFar(formatMastery(summary.nextAction.mastery))}
                 </p>
               )}
+              {isReview && summary.reviewsDue > 1 && (
+                <p className="mt-1 text-xs text-muted-foreground">{t.dashboard.moreReviewsDue(summary.reviewsDue - 1)}</p>
+              )}
             </div>
             <Button asChild size="lg" className="shrink-0">
-              <Link href={`/learn/${summary.nextAction.topicId}`}>
-                {t.dashboard.continueButton}
+              <Link href={actionHref}>
+                {isReview ? t.dashboard.reviewButton : t.dashboard.continueButton}
                 <ArrowRight className="h-4 w-4" aria-hidden />
               </Link>
             </Button>

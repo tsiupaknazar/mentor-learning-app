@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { ArrowRight, Lightbulb, BookOpen } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { AttemptReward, ClientExercise, ExerciseType } from "@/types/domain";
+import type { AttemptReward, ClientExercise, DailyTime, ExerciseType } from "@/types/domain";
 import type { Concept, Evaluation, Hint } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,8 +21,10 @@ import { LoadingSteps } from "@/components/learning/loading-steps";
 import { ChoiceList } from "@/components/learning/choice-list";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { track } from "@/lib/analytics/track";
-import { SESSION_TTL_MS, useDraft } from "@/lib/drafts";
+import { SESSION_TTL_MS, loadDraft, saveDraft, useDraft } from "@/lib/drafts";
 import { EMPTY_ROUND_LOG, recordAttemptInLog, type RoundLog } from "@/lib/round-log";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+import { exercisesForDailyTime } from "@/lib/session-length";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 
 interface SessionRunnerProps {
@@ -48,6 +50,11 @@ interface SessionRunnerProps {
    * a topic, not for reading a lesson.
    */
   mode?: "learn" | "practice";
+  /**
+   * The learner's stated daily time; sets how many exercises a session has
+   * (lib/session-length.ts). Omit for the default of 5.
+   */
+  dailyTime?: DailyTime;
   /** Where "Back to dashboard" / completion actions should return to. */
   backHref?: string;
   backLabel?: string;
@@ -65,7 +72,6 @@ type Phase =
   | "error";
 
 const HINT_LEVELS: Hint["level"][] = ["direction", "specific_problem", "strong_hint"];
-const EXERCISES_PER_SESSION = 5;
 const SUBMIT_SHORTCUT_HINT = "Ctrl/⌘ + Enter";
 
 /**
@@ -84,6 +90,8 @@ interface SessionSnapshot {
   challengeMode: boolean;
   /** Absent in snapshots saved before the round summary existed. */
   log?: RoundLog;
+  /** Session length it was started with; absent in older snapshots (then 5). */
+  planned?: number;
 }
 
 /**
@@ -123,10 +131,11 @@ export function SessionRunner({
   masteryOverall,
   topicContextLabel,
   mode = "learn",
+  dailyTime,
   backHref = "/dashboard",
   backLabel,
 }: SessionRunnerProps) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const resolvedBackLabel = backLabel ?? (mode === "practice" ? t.session.backToPractice : t.session.backToDashboard);
   const isPractice = mode === "practice";
   const startSession = useMutation(api.sessions.startSession);
@@ -141,6 +150,10 @@ export function SessionRunner({
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<Id<"sessions"> | null>(null);
   const [completedCount, setCompletedCount] = useState(0);
+  // Fixed for the life of a session: a fresh one takes the learner's current
+  // preference, a resumed one keeps the length it started with.
+  const preferredLength = exercisesForDailyTime(dailyTime);
+  const [planned, setPlanned] = useState(preferredLength);
 
   const [concept, setConcept] = useState<Concept | null>(null);
   const [showTheory, setShowTheory] = useState(false);
@@ -158,6 +171,33 @@ export function SessionRunner({
   const [log, setLog] = useState<RoundLog>(EMPTY_ROUND_LOG);
   const [hintError, setHintError] = useState<string | null>(null);
 
+  // The concept overview is a Gemini call, and used to start only after the
+  // learner clicked Start (then made them wait for it, every session). Now it
+  // is requested as soon as the intro screen shows, so it's usually ready by
+  // the time they click, and cached per topic + language so revisits are free.
+  const conceptKey = `concept:${topicId}:${locale}`;
+  const conceptRequest = useRef<Promise<Concept | null> | null>(null);
+  const requestConcept = useCallback((): Promise<Concept | null> => {
+    const cached = loadDraft<Concept>(conceptKey, SESSION_TTL_MS);
+    if (cached) return Promise.resolve(cached);
+    return apiFetch<{ concept: Concept }>("/api/concept", {
+      topic: topicContextLabel ?? topicTitle,
+      subtopic: topicTitle,
+    })
+      .then((data) => {
+        saveDraft(conceptKey, data.concept);
+        return data.concept;
+      })
+      .catch(() => null); // theory is optional; the caller decides what a miss means
+  }, [conceptKey, topicContextLabel, topicTitle]);
+
+  useEffect(() => {
+    // Not for practice (no theory step), and not while an unfinished session
+    // is on offer - most of those learners will resume rather than start over.
+    if (isPractice || !snapshotReady || snapshot || conceptRequest.current) return;
+    conceptRequest.current = requestConcept();
+  }, [isPractice, snapshotReady, snapshot, requestConcept]);
+
   useEffect(() => {
     if (!sessionId) return;
     if (phase === "exercise" && exercise && exerciseId) {
@@ -171,12 +211,13 @@ export function SessionRunner({
         solutionRevealed,
         challengeMode,
         log,
+        planned,
       });
     } else if (phase === "feedback") {
       // The attempt is recorded server-side; what's left to resume is the
       // *next* exercise, so bank this one as completed and drop its content.
       const done = completedCount + 1;
-      if (done >= EXERCISES_PER_SESSION) {
+      if (done >= planned) {
         clearSnapshot();
       } else {
         saveSnapshot({
@@ -189,6 +230,7 @@ export function SessionRunner({
           solutionRevealed: false,
           challengeMode: false,
           log,
+          planned,
         });
       }
     } else if (phase === "complete") {
@@ -205,6 +247,7 @@ export function SessionRunner({
     solutionRevealed,
     challengeMode,
     log,
+    planned,
     saveSnapshot,
     clearSnapshot,
   ]);
@@ -213,7 +256,11 @@ export function SessionRunner({
     setSessionId(saved.sessionId as Id<"sessions">);
     setCompletedCount(saved.completedCount);
     setChallengeMode(saved.challengeMode);
+    setPlanned(saved.planned ?? 5);
     setLog(saved.log ?? EMPTY_ROUND_LOG);
+    // Bring back "Show theory" if the overview is still cached from earlier.
+    const cachedConcept = isPractice ? null : loadDraft<Concept>(conceptKey, SESSION_TTL_MS);
+    if (cachedConcept) setConcept(cachedConcept);
     setReward(null);
     if (saved.exercise && saved.exerciseId) {
       setExercise(saved.exercise);
@@ -243,18 +290,16 @@ export function SessionRunner({
     setReward(null);
     setHintError(null);
     try {
-      const res = await fetch("/api/exercise", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topicId, sessionId: sid, challengeMode: challenge }),
+      const data = await apiFetch<{ exercise: ClientExercise; exerciseId: string }>("/api/exercise", {
+        topicId,
+        sessionId: sid,
+        challengeMode: challenge,
       });
-      if (!res.ok) throw new Error(t.session.couldNotGenerateExercise);
-      const data = await res.json();
-      setExercise(data.exercise as ClientExercise);
+      setExercise(data.exercise);
       setExerciseId(data.exerciseId as Id<"exercises">);
       setPhase("exercise");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.somethingWentWrong);
+      setError(apiErrorMessage(e, t, t.session.couldNotGenerateExercise));
       setPhase("error");
     }
   }
@@ -267,17 +312,18 @@ export function SessionRunner({
     }
     setPhase("loading_concept");
     setError(null);
-    try {
-      const res = await fetch("/api/concept", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topicContextLabel ?? topicTitle, subtopic: topicTitle }),
-      });
-      if (!res.ok) throw new Error("Could not prepare the concept overview.");
-      const data = await res.json();
-      setConcept(data.concept as Concept);
+    const wasPrefetched = conceptRequest.current !== null;
+    let loaded = await (conceptRequest.current ??= requestConcept());
+    if (!loaded && wasPrefetched) {
+      // The background attempt missed (e.g. a blip) - one more try now that
+      // the learner is actually waiting on it.
+      conceptRequest.current = requestConcept();
+      loaded = await conceptRequest.current;
+    }
+    if (loaded) {
+      setConcept(loaded);
       setPhase("concept");
-    } catch {
+    } else {
       // Theory is supplementary, not required — fall straight into practice
       // rather than blocking the whole session on it.
       await beginPractice();
@@ -292,12 +338,13 @@ export function SessionRunner({
     setCompletedCount(0);
     setChallengeMode(false);
     setLog(EMPTY_ROUND_LOG);
+    setPlanned(preferredLength);
     try {
       const sid = await startSession({
         userId,
         topicId,
         objective: `Understand ${topicTitle} and apply it correctly.`,
-        exercisesPlanned: EXERCISES_PER_SESSION,
+        exercisesPlanned: preferredLength,
       });
       setSessionId(sid);
       await fetchExercise(sid);
@@ -313,19 +360,17 @@ export function SessionRunner({
     if (!level) return;
     setHintError(null);
     try {
-      const res = await fetch("/api/hint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exerciseId, hintLevel: level, learnerAttemptSoFar: answer || null }),
+      const data = await apiFetch<{ hint: Hint }>("/api/hint", {
+        exerciseId,
+        hintLevel: level,
+        learnerAttemptSoFar: answer || null,
       });
-      if (!res.ok) throw new Error("Could not get a hint.");
-      const data = await res.json();
-      setVisibleHints((prev) => [...prev, data.hint as Hint]);
+      setVisibleHints((prev) => [...prev, data.hint]);
       setHintsUsed((n) => n + 1);
-    } catch {
+    } catch (e) {
       // Non-fatal (they can keep working), but say so - a button that
       // silently does nothing reads as broken.
-      setHintError(t.session.couldNotGetHint);
+      setHintError(apiErrorMessage(e, t, t.session.couldNotGetHint));
     }
   }
 
@@ -334,21 +379,15 @@ export function SessionRunner({
     setPhase("submitting");
     setError(null);
     try {
-      const res = await fetch("/api/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          exerciseId,
-          submittedAnswer: answer,
-          hintsUsed,
-          solutionRevealed,
-          sessionId,
-        }),
+      const data = await apiFetch<{ evaluation: Evaluation; reward?: AttemptReward }>("/api/evaluate", {
+        exerciseId,
+        submittedAnswer: answer,
+        hintsUsed,
+        solutionRevealed,
+        sessionId,
       });
-      if (!res.ok) throw new Error(t.session.couldNotEvaluate);
-      const data = await res.json();
-      const result = data.evaluation as Evaluation;
-      const earned = (data.reward as AttemptReward | undefined) ?? null;
+      const result = data.evaluation;
+      const earned = data.reward ?? null;
       setEvaluation(result);
       setReward(earned);
       setLog((prev) =>
@@ -377,7 +416,7 @@ export function SessionRunner({
       // exercise, which would discard the learner's answer and hints. Go back
       // to the exercise (answer is restored by CodeEditor's initialCode) and
       // let Submit act as the retry.
-      setError(e instanceof Error ? e.message : t.common.somethingWentWrong);
+      setError(apiErrorMessage(e, t, t.session.couldNotEvaluate));
       setPhase("exercise");
     }
   }
@@ -397,7 +436,7 @@ export function SessionRunner({
     if (!sessionId) return;
     const next = completedCount + 1;
     setCompletedCount(next);
-    if (next >= EXERCISES_PER_SESSION) {
+    if (next >= planned) {
       setPhase("complete");
       return;
     }
@@ -409,7 +448,7 @@ export function SessionRunner({
   if (phase === "intro") {
     return (
       <div className="space-y-6">
-        <Header topicTitle={topicTitle} completedCount={0} mode={mode} t={t} />
+        <Header topicTitle={topicTitle} completedCount={0} total={planned} mode={mode} t={t} />
         <Card>
           <CardContent className="space-y-3 p-6">
             <p className="font-mono text-xs uppercase tracking-widest text-accent">
@@ -422,13 +461,18 @@ export function SessionRunner({
             {masteryOverall > 0 && (
               <p className="text-xs text-muted-foreground">{t.session.currentMastery(masteryOverall)}</p>
             )}
+            {dailyTime && (
+              <p className="text-xs text-muted-foreground">
+                {t.session.sizedFor(preferredLength, t.onboarding.times[dailyTime])}
+              </p>
+            )}
           </CardContent>
         </Card>
         {snapshotReady && snapshot && (
           <Card className="border-accent/40">
             <CardContent className="space-y-3 p-5">
               <p className="font-mono text-xs uppercase tracking-widest text-accent">{t.session.resumeTitle}</p>
-              <p className="text-sm">{t.session.resumeDescription(snapshot.completedCount, EXERCISES_PER_SESSION)}</p>
+              <p className="text-sm">{t.session.resumeDescription(snapshot.completedCount, snapshot.planned ?? 5)}</p>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => handleResume(snapshot)}>
                   {t.session.resume}
@@ -470,7 +514,7 @@ export function SessionRunner({
   if (phase === "concept" && concept) {
     return (
       <div className="space-y-6">
-        <Header topicTitle={topicTitle} completedCount={0} mode={mode} t={t} />
+        <Header topicTitle={topicTitle} completedCount={0} total={planned} mode={mode} t={t} />
         <ConceptPanel concept={concept} />
         <Button onClick={beginPractice} size="lg">
           {t.session.startPracticingButton}
@@ -496,7 +540,7 @@ export function SessionRunner({
       <SessionSummary
         log={log}
         topicTitle={topicTitle}
-        exerciseCount={EXERCISES_PER_SESSION}
+        exerciseCount={planned}
         backHref={backHref}
         backLabel={resolvedBackLabel}
         onAnotherRound={beginPractice}
@@ -507,7 +551,7 @@ export function SessionRunner({
   if (phase === "feedback" && evaluation) {
     return (
       <div className="space-y-6">
-        <Header topicTitle={topicTitle} completedCount={completedCount} mode={mode} t={t} />
+        <Header topicTitle={topicTitle} completedCount={completedCount} total={planned} mode={mode} t={t} />
         <FeedbackPanel evaluation={evaluation} exerciseId={exerciseId ?? undefined} />
         {reward && <RewardStrip reward={reward} />}
         <div className="flex flex-wrap gap-3">
@@ -537,7 +581,7 @@ export function SessionRunner({
 
     return (
       <div className="space-y-6" onKeyDownCapture={submitOnModEnter}>
-        <Header topicTitle={topicTitle} completedCount={completedCount} mode={mode} t={t} />
+        <Header topicTitle={topicTitle} completedCount={completedCount} total={planned} mode={mode} t={t} />
 
         <Card>
           <CardContent className="space-y-3 p-5">
@@ -642,11 +686,13 @@ export function SessionRunner({
 function Header({
   topicTitle,
   completedCount,
+  total,
   mode = "learn",
   t,
 }: {
   topicTitle: string;
   completedCount: number;
+  total: number;
   mode?: "learn" | "practice";
   t: Dictionary;
 }) {
@@ -659,7 +705,7 @@ function Header({
         <h1 className="text-xl font-semibold">{topicTitle}</h1>
       </div>
       <div className="font-mono text-xs text-muted-foreground">
-        {completedCount} / {EXERCISES_PER_SESSION}
+        {completedCount} / {total}
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import { ChoiceList } from "@/components/learning/choice-list";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useBatchContentTranslation } from "@/lib/i18n/use-content-translation";
 import { useDraft } from "@/lib/drafts";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 
 const HINT_LEVELS: Hint["level"][] = ["direction", "specific_problem", "strong_hint"];
 
@@ -113,19 +114,17 @@ function ProblemSolverBody({
     if (!level) return;
     setHintError(null);
     try {
-      const res = await fetch("/api/hint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exerciseId, hintLevel: level, learnerAttemptSoFar: answer || null }),
+      const data = await apiFetch<{ hint: Hint }>("/api/hint", {
+        exerciseId,
+        hintLevel: level,
+        learnerAttemptSoFar: answer || null,
       });
-      if (!res.ok) throw new Error("Could not get a hint.");
-      const data = await res.json();
-      setVisibleHints((prev) => [...prev, data.hint as Hint]);
+      setVisibleHints((prev) => [...prev, data.hint]);
       setHintsUsed((n) => n + 1);
-    } catch {
+    } catch (e) {
       // Non-fatal (they can keep working), but say so - a button that
       // silently does nothing reads as broken.
-      setHintError(t.session.couldNotGetHint);
+      setHintError(apiErrorMessage(e, t, t.session.couldNotGetHint));
     }
   }
 
@@ -145,27 +144,21 @@ function ProblemSolverBody({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          exerciseId,
-          submittedAnswer: answer,
-          hintsUsed,
-          solutionRevealed,
-          sessionId: null,
-        }),
+      const data = await apiFetch<{ evaluation: Evaluation; reward?: AttemptReward }>("/api/evaluate", {
+        exerciseId,
+        submittedAnswer: answer,
+        hintsUsed,
+        solutionRevealed,
+        sessionId: null,
       });
-      if (!res.ok) throw new Error(t.session.couldNotEvaluate);
-      const data = await res.json();
-      const result = data.evaluation as Evaluation;
+      const result = data.evaluation;
       setEvaluation(result);
-      setReward((data.reward as AttemptReward | undefined) ?? null);
+      setReward(data.reward ?? null);
       // Solved - nothing left worth restoring. An incorrect attempt keeps its
       // draft so the learner can pick the revision up after a refresh.
       if (result.result === "correct") clear();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.somethingWentWrong);
+      setError(apiErrorMessage(e, t, t.session.couldNotEvaluate));
     } finally {
       setSubmitting(false);
     }

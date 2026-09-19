@@ -193,6 +193,29 @@ describe("ProjectTaskRunner", () => {
     });
   });
 
+  describe("when the review request fails", () => {
+    const STARTING = [{ filename: "index.html", content: "<h1>Hi</h1>", language: "html" as const }];
+
+    async function submitFailing(response: () => Response) {
+      vi.mocked(fetch).mockImplementation(async () => response());
+      const user = userEvent.setup();
+      render(<ProjectTaskRunner {...BASE_PROPS} initialStatus="todo" startingFiles={STARTING} />);
+      await user.click(screen.getByRole("button", { name: "Submit for review" }));
+    }
+
+    it("says the AI is struggling for a 502, and keeps the work in place", async () => {
+      await submitFailing(() => new Response("{}", { status: 502 }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("The AI service is having trouble right now. Try again in a moment.");
+      expect(screen.getByLabelText("index.html")).toHaveValue("<h1>Hi</h1>");
+      expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
+    });
+
+    it("falls back to the review-specific message otherwise", async () => {
+      await submitFailing(() => new Response("{}", { status: 500 }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Could not get a review. Try again.");
+    });
+  });
+
   describe("after a review", () => {
     const STARTING = [{ filename: "index.html", content: "<h1>Hi</h1>", language: "html" as const }];
     const NEXT = { _id: "task2", taskCode: "FE-102", title: "Styling" };

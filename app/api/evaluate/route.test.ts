@@ -141,7 +141,7 @@ describe("POST /api/evaluate", () => {
     convexMutationMock.mockClear();
     await POST(jsonRequest({ ...VALID_BODY, sessionId: "session1" }));
     expect(convexMutationMock).toHaveBeenCalledTimes(3);
-    expect(convexMutationMock).toHaveBeenCalledWith(expect.anything(), { sessionId: "session1" });
+    expect(convexMutationMock).toHaveBeenCalledWith(expect.anything(), { sessionId: "session1", exerciseId: "ex1" });
   });
 
   it("returns what the attempt earned: XP, mastery before/after, and new badges (attempt + streak)", async () => {

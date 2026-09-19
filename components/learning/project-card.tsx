@@ -7,6 +7,7 @@ import type { Locale } from "@/types/domain";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { levelLabel } from "@/lib/i18n/dictionaries";
 import { useContentTranslation } from "@/lib/i18n/use-content-translation";
 
 const STATUS_VARIANT = {
@@ -49,9 +50,7 @@ export function ProjectCard({
           <div>
             <div className="flex items-center gap-2">
               <p className="text-sm font-medium">{title}</p>
-              <Badge variant="outline" className="capitalize">
-                {project.level}
-              </Badge>
+              <Badge variant="outline">{levelLabel(t, project.level)}</Badge>
             </div>
             <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{description}</p>
           </div>

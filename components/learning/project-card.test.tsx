@@ -34,4 +34,10 @@ describe("ProjectCard", () => {
     expect(screen.getByText("Kanban board")).toBeInTheDocument();
     expect(screen.getByText("A drag-and-drop kanban board.")).toBeInTheDocument();
   });
+
+  it("shows the level by its display name, not the stored key", () => {
+    render(<ProjectCard project={{ ...BASE_PROJECT, status: "not_started" }} taskCount={4} doneCount={0} />);
+    expect(screen.getByText("Junior")).toBeInTheDocument();
+    expect(screen.queryByText("junior")).not.toBeInTheDocument();
+  });
 });

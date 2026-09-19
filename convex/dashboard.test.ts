@@ -322,3 +322,43 @@ describe("getDashboardSummary next action: path scoping, locks and order", () =>
     expect(summary?.overallMastery).toBe(0);
   });
 });
+
+describe("getDashboardSummary reviewsDue", () => {
+  const past = () => Date.now() - 1000;
+
+  it("counts the due topics of the active path, excluding locked, mastered and other-path ones", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const due = { status: "needs_review", nextReviewDue: past() };
+
+    const old = await seedPathWithTopic(t, userId, { externalId: "old" }, due);
+    await t.run((ctx) => ctx.db.patch(old.learningPathId as never, { isActive: false }));
+
+    const { learningPathId } = await seedPathWithTopic(t, userId, { externalId: "a", title: "A", orderIndex: 0 }, due);
+    await seedPathWithTopic(t, userId, { externalId: "b", title: "B", orderIndex: 1 }, due, learningPathId);
+    await seedPathWithTopic(t, userId, { externalId: "done", orderIndex: 2 }, { status: "mastered", nextReviewDue: past() }, learningPathId);
+    await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "gated", orderIndex: 3, prerequisiteExternalIds: ["never-mastered"] },
+      due,
+      learningPathId
+    );
+    await seedPathWithTopic(t, userId, { externalId: "never-mastered", orderIndex: 4 }, { status: "in_progress" }, learningPathId);
+    await seedPathWithTopic(t, userId, { externalId: "later", orderIndex: 5 }, { status: "needs_review", nextReviewDue: Date.now() + 86_400_000 }, learningPathId);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.reviewsDue).toBe(2); // A and B only
+    expect(summary?.nextAction?.kind).toBe("review");
+  });
+
+  it("is zero when nothing is due", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    await seedPathWithTopic(t, userId, { externalId: "fresh" }, { status: "not_started", attemptsCount: 0 });
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.reviewsDue).toBe(0);
+  });
+});

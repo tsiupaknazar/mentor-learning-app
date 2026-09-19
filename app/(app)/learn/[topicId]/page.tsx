@@ -32,6 +32,7 @@ export default async function TopicSessionPage({
       topicTitle={data.topic.title}
       topicSummary={data.topic.summary}
       masteryOverall={data.progress?.mastery.overall ?? 0}
+      dailyTime={user.dailyTime}
       topicContextLabel={data.parentTopic?.title ?? data.pathTopic ?? undefined}
     />
   );

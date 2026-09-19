@@ -17,6 +17,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { useBatchContentTranslation } from "@/lib/i18n/use-content-translation";
 import { cn } from "@/lib/utils";
 import { orderTopicsForLearning } from "@/convex/lib/topicOrder";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 
 type BoardDifficulty = "easy" | "medium" | "hard";
 const DIFFICULTIES: BoardDifficulty[] = ["easy", "medium", "hard"];
@@ -69,14 +70,9 @@ export function PracticeBoard({ userId }: { userId: Id<"users"> }) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch("/api/practice-problems", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topicIds: topicIds.slice(0, 4) }),
-      });
-      if (!res.ok) throw new Error(t.practice.couldNotGenerate);
+      await apiFetch("/api/practice-problems", { topicIds: topicIds.slice(0, 4) });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.practice.couldNotGenerate);
+      setError(apiErrorMessage(e, t, t.practice.couldNotGenerate));
     } finally {
       setGenerating(false);
     }

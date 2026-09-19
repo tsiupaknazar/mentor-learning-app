@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, RefreshCw, Sparkles } from "lucide-react";
 
@@ -12,8 +12,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { levelLabel } from "@/lib/i18n/dictionaries";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
+import { loadDraft, saveDraft } from "@/lib/drafts";
+import { LoadingSteps } from "@/components/learning/loading-steps";
 
 const LEVELS: SkillLevel[] = ["beginner", "junior", "intermediate", "advanced"];
+
+// Generated ideas are kept briefly so reopening the form (or reloading the
+// page) doesn't pay for another AI call.
+const IDEAS_TTL_MS = 30 * 60 * 1000;
 
 // "closed": just the start button. "ideas": browsing prepared suggestions
 // (the default once opened). "custom": the original free-text topic form,
@@ -22,7 +30,7 @@ type ViewState = "closed" | "ideas" | "custom";
 
 export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const [view, setView] = useState<ViewState>("closed");
   const [level, setLevel] = useState<SkillLevel>(defaultLevel);
 
@@ -30,63 +38,70 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
   const [loadedLevel, setLoadedLevel] = useState<SkillLevel | null>(null);
   const [ideasLoading, setIdeasLoading] = useState(false);
   const [ideasError, setIdeasError] = useState(false);
-  // Bumped on every fetchIdeas call so a slower, older request can't
-  // clobber a newer one's result if they land out of order (e.g. the
-  // background prefetch below resolving after an explicit level-change
-  // refetch already completed).
+  // Bumped on every network fetch so a slower, older request can't clobber a
+  // newer one's result if they land out of order.
   const requestIdRef = useRef(0);
+  // The level a request is currently in flight for, so hovering the button
+  // and then clicking it share one request instead of paying for two.
+  const inflightLevelRef = useRef<SkillLevel | null>(null);
 
   const [topic, setTopic] = useState("");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function fetchIdeas(forLevel: SkillLevel) {
+  const ideasKey = (forLevel: SkillLevel) => `project-ideas:${locale}:${forLevel}`;
+
+  // `force` (the "refresh ideas" button) skips both the cache and the
+  // in-flight check - the learner explicitly wants a new batch.
+  async function fetchIdeas(forLevel: SkillLevel, { force = false } = {}) {
+    if (!force) {
+      const cached = loadDraft<ProjectIdea[]>(ideasKey(forLevel), IDEAS_TTL_MS);
+      if (cached && cached.length > 0) {
+        setIdeas(cached);
+        setLoadedLevel(forLevel);
+        setIdeasError(false);
+        return;
+      }
+      if (inflightLevelRef.current === forLevel) return; // already on its way
+    }
     const requestId = ++requestIdRef.current;
+    inflightLevelRef.current = forLevel;
     setIdeasLoading(true);
     setIdeasError(false);
     try {
-      const res = await fetch("/api/project/ideas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ level: forLevel }),
-      });
-      if (!res.ok) throw new Error("failed");
-      const data = await res.json();
+      const data = await apiFetch<{ ideas: ProjectIdea[] }>("/api/project/ideas", { level: forLevel });
       if (requestId !== requestIdRef.current) return; // superseded by a newer fetch
-      setIdeas(data.ideas as ProjectIdea[]);
+      setIdeas(data.ideas);
       setLoadedLevel(forLevel);
+      saveDraft(ideasKey(forLevel), data.ideas);
     } catch {
       if (requestId !== requestIdRef.current) return;
       setIdeas([]);
       setIdeasError(true);
     } finally {
-      if (requestId === requestIdRef.current) setIdeasLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIdeasLoading(false);
+        inflightLevelRef.current = null;
+      }
     }
   }
 
-  // Pregenerate ideas in the background as soon as the page loads, so
-  // opening "New Project" shows them instantly instead of waiting on a
-  // Gemini call — the button still triggers a fetch itself as a fallback
-  // if this hasn't resolved yet, or if the learner changes level first.
-  useEffect(() => {
-    void fetchIdeas(defaultLevel);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Ideas used to be requested on every page load, even for learners who
+  // never opened the form. Now they're requested on *intent* - hovering,
+  // focusing or touching the start button - which is early enough that they
+  // are usually there by the click, without paying for a call per page view.
+  function warmUpIdeas() {
+    if (view === "closed" && loadedLevel !== level) void fetchIdeas(level);
+  }
 
   async function generateFromTopic(chosenTopic: string, chosenLevel: SkillLevel) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch("/api/project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: chosenTopic, level: chosenLevel }),
-      });
-      if (!res.ok) throw new Error(t.projects.newProject.genericError);
-      const data = await res.json();
+      const data = await apiFetch<{ projectId: string }>("/api/project", { topic: chosenTopic, level: chosenLevel });
       router.push(`/projects/${data.projectId}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.projects.newProject.genericError);
+      setError(apiErrorMessage(e, t, t.projects.newProject.genericError));
       setGenerating(false);
     }
   }
@@ -119,10 +134,31 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
 
   if (view === "closed") {
     return (
-      <Button onClick={handleOpen} variant="outline">
+      <Button
+        onClick={handleOpen}
+        onPointerEnter={warmUpIdeas}
+        onFocus={warmUpIdeas}
+        onTouchStart={warmUpIdeas}
+        variant="outline"
+      >
         <Sparkles className="h-4 w-4" aria-hidden />
         {t.projects.newProject.startButton}
       </Button>
+    );
+  }
+
+  // Scoping a project takes a while: show progress instead of dimmed controls.
+  // A failure drops back to the form below, with the error and the input intact.
+  if (generating) {
+    return (
+      <Card className="border-accent/30">
+        <CardContent className="p-5">
+          <LoadingSteps
+            messages={[t.projects.newProject.scopingTasks, ...t.projects.newProject.buildingSteps]}
+            intervalMs={3500}
+          />
+        </CardContent>
+      </Card>
     );
   }
 
@@ -143,15 +179,15 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
             <Select
               value={level}
               onValueChange={(v) => handleLevelChange(v as SkillLevel)}
-              disabled={generating || ideasLoading}
+              disabled={ideasLoading}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {LEVELS.map((l) => (
-                  <SelectItem key={l} value={l} className="capitalize">
-                    {l}
+                  <SelectItem key={l} value={l}>
+                    {levelLabel(t, l)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -177,17 +213,8 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
                     <CardContent className="space-y-2 p-4">
                       <p className="text-sm font-medium">{idea.title}</p>
                       <p className="text-xs text-muted-foreground">{idea.description}</p>
-                      <Button
-                        size="sm"
-                        className="mt-1 w-full"
-                        disabled={generating}
-                        onClick={() => generateFromTopic(idea.topic, level)}
-                      >
-                        {generating ? (
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                        ) : (
-                          t.projects.newProject.buildThis
-                        )}
+                      <Button size="sm" className="mt-1 w-full" onClick={() => generateFromTopic(idea.topic, level)}>
+                        {t.projects.newProject.buildThis}
                       </Button>
                     </CardContent>
                   </Card>
@@ -202,17 +229,16 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => fetchIdeas(level)}
-                  disabled={generating}
+                  onClick={() => fetchIdeas(level, { force: true })}
                 >
                   <RefreshCw className="h-3.5 w-3.5" aria-hidden />
                   {t.projects.newProject.refreshIdeas}
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={() => setView("custom")} disabled={generating}>
+              <Button variant="ghost" size="sm" onClick={() => setView("custom")}>
                 {t.projects.newProject.useOwnIdea}
               </Button>
-              <Button variant="ghost" size="sm" onClick={reset} disabled={generating}>
+              <Button variant="ghost" size="sm" onClick={reset}>
                 {t.projects.newProject.cancel}
               </Button>
             </div>
@@ -229,20 +255,11 @@ export function NewProjectForm({ defaultLevel }: { defaultLevel: SkillLevel }) {
             </div>
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={handleCustomSubmit} disabled={generating}>
-                {generating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    {t.projects.newProject.scopingTasks}
-                  </>
-                ) : (
-                  t.projects.newProject.generate
-                )}
-              </Button>
-              <Button variant="ghost" onClick={() => setView("ideas")} disabled={generating}>
+              <Button onClick={handleCustomSubmit}>{t.projects.newProject.generate}</Button>
+              <Button variant="ghost" onClick={() => setView("ideas")}>
                 {t.projects.newProject.backToIdeas}
               </Button>
-              <Button variant="ghost" onClick={reset} disabled={generating}>
+              <Button variant="ghost" onClick={reset}>
                 {t.projects.newProject.cancel}
               </Button>
             </div>

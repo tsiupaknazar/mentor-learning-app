@@ -54,4 +54,53 @@ describe("ProjectDetailView", () => {
     expect(screen.getByText("FE-102")).toBeInTheDocument();
     expect(screen.getByText("Style the footer")).toBeInTheDocument();
   });
+
+  describe("progress and what to do next", () => {
+    const tasks = [
+      { _id: "t1", taskCode: "FE-101", title: "Header", status: "done" as const },
+      { _id: "t2", taskCode: "FE-102", title: "Columns", status: "changes_requested" as const },
+      { _id: "t3", taskCode: "FE-103", title: "Drag and drop", status: "todo" as const },
+    ];
+
+    it("shows how many tasks are approved", () => {
+      render(<ProjectDetailView project={PROJECT} tasks={tasks} />);
+      expect(screen.getByText("1 / 3 tasks")).toBeInTheDocument();
+      expect(screen.getByRole("progressbar", { name: "1 / 3 tasks" })).toBeInTheDocument();
+    });
+
+    it("offers to continue with the first task that isn't approved yet", () => {
+      render(<ProjectDetailView project={PROJECT} tasks={tasks} />);
+      expect(screen.getByRole("link", { name: /Continue with FE-102/ })).toHaveAttribute(
+        "href",
+        "/projects/project1/tasks/t2"
+      );
+    });
+
+    it("marks only that task as 'Up next'", () => {
+      render(<ProjectDetailView project={PROJECT} tasks={tasks} />);
+      expect(screen.getAllByText("Up next")).toHaveLength(1);
+      expect(screen.getByRole("link", { name: /FE-102.*Up next/ })).toBeInTheDocument();
+    });
+
+    it("says the work is finished, instead of offering a next task, once every task is approved", () => {
+      render(
+        <ProjectDetailView project={PROJECT} tasks={tasks.map((tk) => ({ ...tk, status: "done" as const }))} />
+      );
+      expect(screen.getByText("3 / 3 tasks")).toBeInTheDocument();
+      expect(screen.getByText("All tasks approved")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /Continue with/ })).not.toBeInTheDocument();
+      expect(screen.queryByText("Up next")).not.toBeInTheDocument();
+    });
+
+    it("shows no progress for a project without tasks", () => {
+      render(<ProjectDetailView project={PROJECT} tasks={[]} />);
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+      expect(screen.queryByText("All tasks approved")).not.toBeInTheDocument();
+    });
+
+    it("shows the level in the learner's language", () => {
+      render(<ProjectDetailView project={PROJECT} tasks={[]} />);
+      expect(screen.getByText("Junior")).toBeInTheDocument();
+    });
+  });
 });

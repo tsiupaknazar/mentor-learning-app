@@ -80,7 +80,7 @@ describe("OnboardingFlow failure recovery", () => {
 
     await user.click(screen.getByRole("button", { name: "Generate my learning path" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not generate your learning path. Try again.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The AI service is having trouble right now. Try again in a moment.");
     expect(pushMock).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
@@ -116,7 +116,7 @@ describe("OnboardingFlow failure recovery", () => {
     await user.click(screen.getByRole("button", { name: "Submit diagnostic" }));
 
     // Back on the same questions - not a blank form - with answers and the error.
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not score the diagnostic. Try again.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The AI service is having trouble right now. Try again in a moment.");
     expect(screen.getByRole("radio", { name: "const" })).toBeChecked();
     expect(screen.getByRole("textbox", { name: "Q2" })).toHaveValue("It captures its scope.");
 
@@ -141,9 +141,26 @@ describe("OnboardingFlow failure recovery", () => {
 
     await user.click(screen.getByRole("button", { name: "Start diagnostic" }));
 
-    expect(await screen.findByText(/Could not generate/)).toBeInTheDocument();
+    expect(await screen.findByText("The AI service is having trouble right now. Try again in a moment.")).toBeInTheDocument();
     // Selections survive: still on the "not sure" flow, ready to try again.
     expect(screen.getByRole("button", { name: "Start diagnostic" })).toBeInTheDocument();
+  });
+});
+
+describe("OnboardingFlow error wording", () => {
+  it("uses the feature's own message for an unclassified server error, and advice for a known cause", async () => {
+    statuses["/api/learning-path"] = [500];
+    const user = userEvent.setup();
+    const { unmount } = render(<OnboardingFlow userId={"user1" as never} />);
+    await user.click(screen.getByRole("button", { name: "Generate my learning path" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not generate your learning path. Try again.");
+    unmount();
+
+    statuses["/api/learning-path"] = [401];
+    calls = {};
+    render(<OnboardingFlow userId={"user1" as never} />);
+    await user.click(screen.getByRole("button", { name: "Generate my learning path" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Your session has expired. Reload the page to sign in again.");
   });
 });
 

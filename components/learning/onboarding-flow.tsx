@@ -26,6 +26,7 @@ import {
 } from "@/components/learning/diagnostic-questions";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { track } from "@/lib/analytics/track";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 type Step =
@@ -89,18 +90,15 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
     if (level === "not_sure") {
       setStep("loading_diagnostic");
       try {
-        const res = await fetch("/api/diagnostic/questions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ topic: resolvedTopic, selfReportedLevel: "not_sure" }),
+        const data = await apiFetch<{ diagnostic: DiagnosticSet }>("/api/diagnostic/questions", {
+          topic: resolvedTopic,
+          selfReportedLevel: "not_sure",
         });
-        if (!res.ok) throw new Error(t.onboarding.couldNotGenerateDiagnostic);
-        const data = await res.json();
-        setDiagnostic(data.diagnostic as DiagnosticSet);
+        setDiagnostic(data.diagnostic);
         setAnswers({});
         setStep("diagnostic");
       } catch (e) {
-        setError(e instanceof Error ? e.message : t.onboarding.genericError);
+        setError(apiErrorMessage(e, t, t.onboarding.couldNotGenerateDiagnostic));
         setStep("form");
       }
       return;
@@ -115,20 +113,17 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
     setError(null);
     try {
       const payload = diagnosticAnswerPayload(diagnostic, answers);
-      const res = await fetch("/api/diagnostic/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: resolvedTopic, answers: payload }),
+      const data = await apiFetch<{ profile: KnowledgeProfile }>("/api/diagnostic/evaluate", {
+        topic: resolvedTopic,
+        answers: payload,
       });
-      if (!res.ok) throw new Error(t.onboarding.couldNotScoreDiagnostic);
-      const data = await res.json();
-      const profile = data.profile as KnowledgeProfile;
+      const profile = data.profile;
       await finishOnboarding(profile.suggestedLevel, profile);
     } catch (e) {
       // Scoring failed: the learner's answers are still in state, so send
       // them back to the questions (Submit is the retry) rather than to a
       // blank form that would regenerate different questions.
-      setError(e instanceof Error ? e.message : t.onboarding.genericError);
+      setError(apiErrorMessage(e, t, t.onboarding.couldNotScoreDiagnostic));
       setStep("diagnostic");
     }
   }
@@ -146,12 +141,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
         dailyTime: time,
       });
 
-      const res = await fetch("/api/learning-path", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: resolvedTopic, knowledgeProfile: profile }),
-      });
-      if (!res.ok) throw new Error(t.onboarding.couldNotGeneratePath);
+      await apiFetch("/api/learning-path", { topic: resolvedTopic, knowledgeProfile: profile });
 
       track("onboarding_completed", {
         level: resolvedLevel,
@@ -163,7 +153,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
 
       router.push("/dashboard");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.onboarding.genericError);
+      setError(apiErrorMessage(e, t, t.onboarding.couldNotGeneratePath));
       setStep("error");
     }
   }

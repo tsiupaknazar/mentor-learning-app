@@ -52,7 +52,16 @@ export function LocaleProvider({
     [locale, setLocale]
   );
 
-  return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>;
+  // The root <html lang> is fixed to "en", so mark the app's own language
+  // here - it's what screen readers use to pick a voice and pronunciation.
+  // `contents` keeps the wrapper out of the layout.
+  return (
+    <LocaleContext.Provider value={value}>
+      <div lang={locale} className="contents">
+        {children}
+      </div>
+    </LocaleContext.Provider>
+  );
 }
 
 export function useLocale(): LocaleContextValue {

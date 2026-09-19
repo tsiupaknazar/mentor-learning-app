@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 const RESULT_ICON = {
@@ -109,17 +110,15 @@ function MentorFollowUp({ question, exerciseId }: { question: string; exerciseId
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/mentor-followup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ exerciseId, followUpQuestion: question, learnerResponse: reply }),
+      const data = await apiFetch<{ reaction: MentorFollowUpReaction }>("/api/mentor-followup", {
+        exerciseId,
+        followUpQuestion: question,
+        learnerResponse: reply,
       });
-      if (!res.ok) throw new Error(t.feedback.couldNotGetReaction);
-      const data = await res.json();
       setSubmittedReply(reply);
-      setReaction(data.reaction as MentorFollowUpReaction);
+      setReaction(data.reaction);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t.feedback.couldNotGetReaction);
+      setError(apiErrorMessage(e, t, t.feedback.couldNotGetReaction));
     } finally {
       setSubmitting(false);
     }
