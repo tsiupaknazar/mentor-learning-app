@@ -77,6 +77,25 @@ Interview mode are stubbed with honest "not yet implemented" pages — see
   - A beginner's first two exercises on a topic are faded worked examples
     (`lib/scaffolding.ts`), and the learning style now nudges which exercise types are
     generated (`exerciseStyleGuidance` in `lib/prompts.ts`).
+  - **Beginner journey** (from a walk-through of the app as a first-timer):
+    - HTML exercises get a live preview beside the editor, and CSS exercises carry their own
+      `previewMarkup` to be previewed against (`exercise-editor.tsx`, `lib/preview-doc.ts`).
+    - JavaScript exercises with `sum(2, 3)`-style test cases can be run in the browser
+      (`lib/js-tests.ts`); the results go to the reviewer with the answer as strong evidence
+      (client-reported, so not authoritative). Tests in any other format are skipped rather than
+      mis-graded.
+    - After a missed attempt the worked solution is one click away (`/api/solution`, only after
+      a non-correct attempt). Showing it is recorded on the exercise (`solutionRevealedAt`), so
+      every later attempt earns less XP whatever the client says.
+    - A beginner only gets exercise types they can do, difficulty capped at "hard", and a gentler
+      mentor voice with the score rubric tucked away (`levelGuidance`, `BEGINNER_MENTOR_ADDENDUM`).
+    - A Learn session counts as having learned a topic only if about half its exercises were
+      answered right (or after two finished rounds); see `hasLearned` in `convex/lib/curriculum.ts`.
+      Sessions from before `exercisesSucceeded` existed keep counting.
+    - Onboarding explains each level, the "not sure" quiz opens gently, path generation is told
+      to take a beginner in the smallest steps, and the dashboard figures say what they mean.
+    - Lesson, session and solution events go to PostHog (`lesson_step_viewed`,
+      `lesson_completed`, `session_started`/`session_completed`, `solution_shown`, ...).
 - **Diagnostic was too shallow to place someone across a broad topic.** A fixed 5-6
   questions can't cover a whole topic like "JavaScript" — you'd get a placement based on
   a handful of lucky/unlucky guesses. `lib/prompts.ts`'s `buildDiagnosticPrompt` now has

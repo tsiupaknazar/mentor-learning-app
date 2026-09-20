@@ -190,6 +190,11 @@ export default defineSchema({
     // convex/lib/curriculum.ts). Sessions from before this field existed have
     // none, and are treated as "learn" so nobody's progress is taken away.
     mode: v.optional(v.union(v.literal("learn"), v.literal("practice"))),
+    // How many of the session's exercises were answered correctly or partly
+    // correctly (each exercise counted once, whichever attempt got there). A
+    // Learn session only counts as having learned the topic when enough were.
+    // Absent on sessions from before it was tracked.
+    exercisesSucceeded: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_completed", ["userId", "completedAt"]),
@@ -225,6 +230,12 @@ export default defineSchema({
       )
     ),
     referenceSolution: v.string(),
+    // CSS exercises only: the markup the learner's CSS is previewed against.
+    previewMarkup: v.optional(v.string()),
+    // Set when the learner asked to see the worked solution (see
+    // app/api/solution). Recorded here, not trusted from the client, so every
+    // later attempt on the exercise counts as having seen the answer.
+    solutionRevealedAt: v.optional(v.number()),
     createdAt: v.number(),
     // Same purpose as learningPaths.contentLocale above: the language this
     // exercise's title/subtopic/prompt/choices were actually generated in.

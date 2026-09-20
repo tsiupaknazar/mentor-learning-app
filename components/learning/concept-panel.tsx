@@ -12,6 +12,7 @@ import { ChoiceList } from "@/components/learning/choice-list";
 import { ReadOnlyCode } from "@/components/learning/read-only-code";
 import { TryItExample, canTryExample } from "@/components/learning/try-it-example";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/analytics/track";
 import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 import { useLocale } from "@/lib/i18n/locale-context";
 
@@ -73,16 +74,21 @@ function Example({ example, language }: { example: ConceptExample; language: Con
 }
 
 /** One ungraded multiple-choice question; answering is instant feedback, never a gate. */
-function ConceptCheck({ check }: { check: ConceptCheckData }) {
+function ConceptCheck({ check, topic, heading }: { check: ConceptCheckData; topic: string; heading: string }) {
   const { t } = useLocale();
   const [picked, setPicked] = useState("");
   const answered = picked !== "";
   const correct = picked === check.choices[check.correctIndex];
+  function pick(choice: string) {
+    // The first answer is the signal; changing it afterwards is just exploring.
+    if (!answered) track("lesson_check_answered", { topic, section: heading, correct: choice === check.choices[check.correctIndex] });
+    setPicked(choice);
+  }
   return (
     <div className="space-y-2 rounded-md border border-border bg-surface p-3">
       <p className="font-mono text-[11px] uppercase tracking-wide text-accent">{t.concept.quickCheck}</p>
       <p className="text-sm font-medium">{check.question}</p>
-      <ChoiceList choices={check.choices} value={picked} onChange={setPicked} label={check.question} />
+      <ChoiceList choices={check.choices} value={picked} onChange={pick} label={check.question} />
       {answered && (
         <p role="status" className={cn("text-sm", correct ? "text-mastery-strong" : "text-mastery-weak")}>
           <span className="font-medium">{correct ? t.concept.checkCorrect : t.concept.checkIncorrect}</span>{" "}
@@ -115,6 +121,7 @@ function LessonReport({ subtopic, heading }: { subtopic: string; heading?: strin
         route: window.location.pathname || "/",
       });
       setStatus("sent");
+      track("lesson_reported", { topic: subtopic, section: heading ?? null });
     } catch (e) {
       setError(apiErrorMessage(e, t, t.concept.reportError));
       setStatus("error");
@@ -162,10 +169,12 @@ function LessonReport({ subtopic, heading }: { subtopic: string; heading?: strin
 function SectionBlock({
   section,
   language,
+  topic,
   withCheck,
 }: {
   section: ConceptSection;
   language: Concept["language"];
+  topic: string;
   withCheck?: boolean;
 }) {
   return (
@@ -173,7 +182,7 @@ function SectionBlock({
       <h3 className="text-sm font-semibold">{section.heading}</h3>
       <Explanation>{section.body}</Explanation>
       {section.example && <Example example={section.example} language={language} />}
-      {withCheck && section.check && <ConceptCheck check={section.check} />}
+      {withCheck && section.check && <ConceptCheck check={section.check} topic={topic} heading={section.heading} />}
     </div>
   );
 }
@@ -218,7 +227,7 @@ export function ConceptPanel({ concept, focusHeading }: { concept: Concept; focu
             ref={isFocus ? focused : undefined}
             className={cn(isFocus && "-m-2 rounded-md bg-accent/8 p-2 ring-1 ring-accent/50")}
           >
-            <SectionBlock section={section} language={concept.language} />
+            <SectionBlock section={section} language={concept.language} topic={concept.subtopic} />
           </div>
         );
       })}
@@ -242,8 +251,17 @@ export function ConceptLesson({ concept, onFinish }: { concept: Concept; onFinis
   const [step, setStep] = useState(0);
   const top = useRef<HTMLDivElement>(null);
 
+  // Where in a lesson people stop is what shows which steps lose them.
+  useEffect(() => {
+    if (sections.length > 0) track("lesson_step_viewed", { topic: concept.subtopic, step: step + 1, total: sections.length + 2 });
+  }, [step, sections.length, concept.subtopic]);
+
+  const finish = () => {
+    track("lesson_completed", { topic: concept.subtopic, kind: sections.length > 0 ? "lesson" : "quick" });
+    onFinish();
+  };
   const finishButton = (
-    <Button onClick={onFinish} size="lg">
+    <Button onClick={finish} size="lg">
       {t.session.startPracticingButton}
       <ArrowRight className="h-4 w-4" aria-hidden />
     </Button>
@@ -280,7 +298,13 @@ export function ConceptLesson({ concept, onFinish }: { concept: Concept; onFinis
         )}
         {/* Keyed per step (and distinctly from the report below) so a step's check and open examples start fresh. */}
         {currentSection && (
-          <SectionBlock key={`section-${step}`} section={currentSection} language={concept.language} withCheck />
+          <SectionBlock
+            key={`section-${step}`}
+            section={currentSection}
+            language={concept.language}
+            topic={concept.subtopic}
+            withCheck
+          />
         )}
         {isLast && (
           <>

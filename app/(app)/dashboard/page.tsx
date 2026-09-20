@@ -26,11 +26,15 @@ export default async function DashboardPage() {
     ? nextActionTarget(summary.nextAction.kind as NextActionKind, summary.nextAction.topicId)
     : { href: "/learn", isReview: false };
 
-  const stats: { label: string; value: string }[] = [
-    { label: t.dashboard.overallMastery, value: formatMastery(summary.overallMastery) },
-    { label: t.dashboard.topicsMastered, value: `${summary.topicsMastered}/${summary.topicsCount}` },
-    { label: t.dashboard.streak, value: `${summary.user.currentStreak}d` },
-    { label: t.dashboard.xp, value: String(summary.user.totalXp) },
+  const stats: { label: string; hint: string; value: string }[] = [
+    { label: t.dashboard.overallMastery, hint: t.dashboard.statHints.overallMastery, value: formatMastery(summary.overallMastery) },
+    {
+      label: t.dashboard.topicsMastered,
+      hint: t.dashboard.statHints.topicsMastered,
+      value: `${summary.topicsMastered}/${summary.topicsCount}`,
+    },
+    { label: t.dashboard.streak, hint: t.dashboard.statHints.streak, value: `${summary.user.currentStreak}d` },
+    { label: t.dashboard.xp, hint: t.dashboard.statHints.xp, value: String(summary.user.totalXp) },
   ];
 
   return (
@@ -105,6 +109,7 @@ export default async function DashboardPage() {
           <div key={s.label} className="flex-1 px-5 py-4 first:pl-0">
             <p className="font-mono-tabular text-2xl font-semibold">{s.value}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{s.label}</p>
+            <p className="mt-1 max-w-[16rem] text-[11px] leading-snug text-muted-foreground/80">{s.hint}</p>
           </div>
         ))}
       </div>

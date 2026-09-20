@@ -5,6 +5,9 @@ import userEvent from "@testing-library/user-event";
 import type { Concept } from "@/lib/schemas";
 import { ConceptLesson, ConceptPanel } from "./concept-panel";
 
+const { trackMock } = vi.hoisted(() => ({ trackMock: vi.fn() }));
+vi.mock("@/lib/analytics/track", () => ({ track: trackMock }));
+
 // CodeMirror is out of scope here: the editors are plain controlled textareas.
 vi.mock("@uiw/react-codemirror", () => ({
   default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
@@ -256,5 +259,49 @@ describe("ConceptPanel: focusing a section", () => {
       // @ts-expect-error - jsdom doesn't implement it; restore to that
       delete Element.prototype.scrollIntoView;
     }
+  });
+});
+
+describe("lesson analytics", () => {
+  beforeEach(() => trackMock.mockClear());
+  const events = (name: string) => trackMock.mock.calls.filter(([n]) => n === name).map(([, p]) => p);
+
+  it("records each step viewed, so drop-off shows where people stop", async () => {
+    const user = userEvent.setup();
+    render(<ConceptLesson concept={LESSON} onFinish={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /Next/ }));
+    await user.click(screen.getByRole("button", { name: /Next/ }));
+
+    expect(events("lesson_step_viewed")).toEqual([
+      { topic: "Headings", step: 1, total: 4 },
+      { topic: "Headings", step: 2, total: 4 },
+      { topic: "Headings", step: 3, total: 4 },
+    ]);
+  });
+
+  it("records finishing, whichever kind of concept it was", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<ConceptLesson concept={LESSON} onFinish={vi.fn()} />);
+    for (let i = 0; i < 3; i++) await user.click(screen.getByRole("button", { name: /Next/ }));
+    await user.click(screen.getByRole("button", { name: "Start practicing" }));
+    expect(events("lesson_completed")).toEqual([{ topic: "Headings", kind: "lesson" }]);
+    unmount();
+
+    trackMock.mockClear();
+    render(<ConceptLesson concept={QUICK} onFinish={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Start practicing" }));
+    expect(events("lesson_completed")).toEqual([{ topic: "Headings", kind: "quick" }]);
+    expect(events("lesson_step_viewed")).toEqual([]); // a single card has no steps
+  });
+
+  it("records the first answer to a check only, not later second thoughts", async () => {
+    const user = userEvent.setup();
+    render(<ConceptLesson concept={LESSON} onFinish={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /Next/ }));
+
+    await user.click(screen.getByRole("radio", { name: "p" }));
+    await user.click(screen.getByRole("radio", { name: "<p>" }));
+
+    expect(events("lesson_check_answered")).toEqual([{ topic: "Headings", section: "What is a tag?", correct: false }]);
   });
 });

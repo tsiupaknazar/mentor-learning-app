@@ -116,6 +116,32 @@ describe("conceptSchema.sections (the beginner lesson)", () => {
   });
 });
 
+describe("exerciseSchema.previewMarkup", () => {
+  const base = {
+    id: "ex1",
+    topic: "CSS",
+    subtopic: "Selectors",
+    type: "code_completion",
+    difficulty: "easy",
+    language: "css",
+    title: "Style the heading",
+    prompt: "p",
+    starterCode: "h1 {}",
+    choices: null,
+    testCases: null,
+    referenceSolution: "h1 { color: red; }",
+  };
+
+  it("is optional, so exercises made before it existed still parse", () => {
+    expect(exerciseSchema.parse(base).previewMarkup).toBeUndefined();
+  });
+
+  it("accepts markup or an explicit null", () => {
+    expect(exerciseSchema.parse({ ...base, previewMarkup: "<h1>Hi</h1>" }).previewMarkup).toBe("<h1>Hi</h1>");
+    expect(exerciseSchema.parse({ ...base, previewMarkup: null }).previewMarkup).toBeNull();
+  });
+});
+
 describe("DIAGNOSTIC_QUESTION_COUNT bound, shared by diagnosticSetSchema", () => {
   it("rejects fewer questions than the minimum", () => {
     const tooFew = Array.from({ length: DIAGNOSTIC_QUESTION_COUNT.min - 1 }, (_, i) => ({

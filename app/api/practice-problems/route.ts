@@ -116,6 +116,8 @@ export async function POST(req: Request) {
             ? p.testCases.map((tc) => ({ ...tc, description: tc.description ?? undefined }))
             : undefined,
           referenceSolution: p.referenceSolution,
+          // Only meaningful (and only asked for) when the problem is CSS.
+          previewMarkup: (requiredLanguage ?? p.language) === "css" ? (p.previewMarkup ?? undefined) : undefined,
         });
       })
     );

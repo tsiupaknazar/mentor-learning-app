@@ -12,13 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { CodeEditor } from "@/components/learning/code-editor";
+import { ExerciseEditor } from "@/components/learning/exercise-editor";
 import { ReadOnlyCode } from "@/components/learning/read-only-code";
 import { ConceptLesson, ConceptPanel } from "@/components/learning/concept-panel";
 import { FeedbackPanel, RewardStrip } from "@/components/learning/feedback-panel";
 import { SessionSummary } from "@/components/learning/session-summary";
 import { LoadingSteps } from "@/components/learning/loading-steps";
 import { ChoiceList } from "@/components/learning/choice-list";
+import { SolutionPanel, SolutionReveal } from "@/components/learning/solution-reveal";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { track } from "@/lib/analytics/track";
 import { SESSION_TTL_MS, loadDraft, saveDraft, useDraft } from "@/lib/drafts";
@@ -26,6 +27,8 @@ import { EMPTY_ROUND_LOG, recordAttemptInLog, type RoundLog } from "@/lib/round-
 import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 import { exercisesForDailyTime } from "@/lib/session-length";
 import { defaultConceptDepth } from "@/lib/concept-depth";
+import { collectTestResults } from "@/lib/js-tests";
+import { learnSessionQualifies } from "@/convex/lib/curriculum";
 import { cn } from "@/lib/utils";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 
@@ -177,6 +180,8 @@ export function SessionRunner({
   const [hintsUsed, setHintsUsed] = useState(0);
   const [visibleHints, setVisibleHints] = useState<Hint[]>([]);
   const [solutionRevealed, setSolutionRevealed] = useState(false);
+  // The worked solution, once the learner has asked for it after a miss.
+  const [solution, setSolution] = useState<string | null>(null);
   const [challengeMode, setChallengeMode] = useState(false);
 
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
@@ -300,6 +305,7 @@ export function SessionRunner({
     setHintsUsed(0);
     setVisibleHints([]);
     setSolutionRevealed(false);
+    setSolution(null);
     setShowTheory(false);
     setTheoryFocus(undefined);
     setEvaluation(null);
@@ -321,6 +327,7 @@ export function SessionRunner({
   }
 
   async function handleStart() {
+    track("session_started", { topic: topicContextLabel ?? topicTitle, subtopic: topicTitle, mode, depth: isPractice ? null : depth });
     // Practice is exercises-only — no concept/theory step, straight into drilling.
     if (isPractice) {
       await beginPractice();
@@ -401,9 +408,16 @@ export function SessionRunner({
     setPhase("submitting");
     setError(null);
     try {
+      // Run the code against the exercise's tests first, so the review starts
+      // from what the code actually does rather than from a read of it.
+      const testResults =
+        exercise && CODE_ANSWER_TYPES.has(exercise.type) && exercise.starterCode !== null
+          ? await collectTestResults(exercise, answer)
+          : null;
       const data = await apiFetch<{ evaluation: Evaluation; reward?: AttemptReward }>("/api/evaluate", {
         exerciseId,
         submittedAnswer: answer,
+        testResults: testResults ?? undefined,
         hintsUsed,
         solutionRevealed,
         sessionId,
@@ -459,6 +473,7 @@ export function SessionRunner({
   const lessonHeadings = concept?.sections?.map((s) => s.heading) ?? [];
 
   function revisitLesson(heading: string) {
+    track("lesson_revisited", { subtopic: topicTitle, section: heading });
     setTheoryFocus(heading);
     setShowTheory(true);
   }
@@ -468,6 +483,7 @@ export function SessionRunner({
     const next = completedCount + 1;
     setCompletedCount(next);
     if (next >= planned) {
+      track("session_completed", { topic: topicContextLabel ?? topicTitle, subtopic: topicTitle, mode, exercises: planned });
       setPhase("complete");
       return;
     }
@@ -500,7 +516,14 @@ export function SessionRunner({
           </CardContent>
         </Card>
         {!isPractice && (
-          <DepthPicker depth={depth} onChange={setDepth} t={t} />
+          <DepthPicker
+            depth={depth}
+            onChange={(d) => {
+              track("lesson_depth_selected", { subtopic: topicTitle, depth: d, level: level ?? null });
+              setDepth(d);
+            }}
+            t={t}
+          />
         )}
         {snapshotReady && snapshot && (
           <Card className="border-accent/40">
@@ -574,6 +597,15 @@ export function SessionRunner({
         backHref={backHref}
         backLabel={resolvedBackLabel}
         onAnotherRound={beginPractice}
+        // The same rule the path uses (convex/lib/curriculum.ts), so the
+        // learner is told before the dashboard says "continue" on this topic.
+        notYetDone={
+          !isPractice &&
+          !learnSessionQualifies({
+            exercisesPlanned: planned,
+            exercisesSucceeded: log.entries.filter((e) => e.result !== "incorrect").length,
+          })
+        }
       />
     );
   }
@@ -586,9 +618,23 @@ export function SessionRunner({
           evaluation={evaluation}
           exerciseId={exerciseId ?? undefined}
           onRevisitLesson={lessonHeadings.length > 0 ? revisitLesson : undefined}
+          compactScores={level === "beginner"}
         />
         {showTheory && concept && <ConceptPanel concept={concept} focusHeading={theoryFocus} />}
+        {solution !== null && exercise && (
+          <SolutionPanel solution={solution} asCode={CODE_ANSWER_TYPES.has(exercise.type) && exercise.starterCode !== null} language={exercise.language} />
+        )}
         {reward && <RewardStrip reward={reward} />}
+        {evaluation.result !== "correct" && solution === null && exerciseId && (
+          <SolutionReveal
+            exerciseId={exerciseId}
+            onLoaded={(s) => {
+              track("solution_shown", { subtopic: topicTitle, difficulty: exercise?.difficulty, hintsUsed });
+              setSolution(s);
+              setSolutionRevealed(true);
+            }}
+          />
+        )}
         <div className="flex flex-wrap gap-3">
           {evaluation.result !== "correct" && (
             <Button variant="outline" onClick={() => setPhase("exercise")}>
@@ -655,6 +701,10 @@ export function SessionRunner({
         {/* Revisit theory without leaving the exercise — for study/revision, not just first pass */}
         {showTheory && concept && <ConceptPanel concept={concept} focusHeading={theoryFocus} />}
 
+        {solution !== null && (
+          <SolutionPanel solution={solution} asCode={isCodeAnswer} language={exercise.language} />
+        )}
+
         {/* Reference code to read (predict/explain/find-the-bug/review/compare) — never the answer itself */}
         {isReadOnlyCode && exercise.starterCode && (
           <ReadOnlyCode code={exercise.starterCode} language={exercise.language} />
@@ -663,13 +713,15 @@ export function SessionRunner({
         {isMultipleChoice ? (
           <ChoiceList choices={exercise.choices!} value={answer} onChange={setAnswer} label={exercise.title} />
         ) : isCodeAnswer ? (
-          <CodeEditor
+          <ExerciseEditor
             starterCode={exercise.starterCode ?? "// Write your solution here\n"}
             // Non-empty only when returning via "Revise and resubmit" — the
             // editor unmounts during feedback and would otherwise reset.
             initialCode={answer || undefined}
             onChange={setAnswer}
             language={exercise.language}
+            previewMarkup={exercise.previewMarkup}
+            testCases={exercise.testCases}
           />
         ) : (
           <Textarea
@@ -712,6 +764,9 @@ export function SessionRunner({
           )}
           {solutionRevealed && <p className="text-xs text-muted-foreground">{t.session.solutionMarked}</p>}
         </div>
+        {hintsUsed >= HINT_LEVELS.length && solution === null && (
+          <p className="text-xs text-muted-foreground">{t.session.stuckNote}</p>
+        )}
         {hintError && <p role="alert" className="text-sm text-destructive">{hintError}</p>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>

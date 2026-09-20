@@ -200,6 +200,10 @@ export const exerciseSchema = z.object({
   choices: looseNullable(z.array(z.string().min(1).max(300)).max(6)),
   testCases: looseNullable(z.array(exerciseTestCaseSchema).max(10)),
   referenceSolution: z.string().max(4000),
+  // For CSS exercises only: the small piece of markup the learner's CSS is
+  // applied to in the live preview (CSS alone has nothing to style). Absent
+  // or null for every other language, and for exercises made before this.
+  previewMarkup: z.string().max(3000).nullish(),
 });
 export type Exercise = z.infer<typeof exerciseSchema>;
 

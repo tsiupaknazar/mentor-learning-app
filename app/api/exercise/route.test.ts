@@ -123,6 +123,21 @@ describe("POST /api/exercise", () => {
     expect(savedArgs.language).toBe("sql");
   });
 
+  it("stores the markup a CSS exercise is previewed against, and sends it to the browser", async () => {
+    generateStructuredMock.mockResolvedValue({
+      ...GENERATED_EXERCISE,
+      language: "css",
+      previewMarkup: "<h1>Title</h1>",
+    });
+
+    const res = await POST(jsonRequest(VALID_BODY));
+
+    const { body } = await statusAndBody(res);
+    expect(convexMutationMock.mock.calls[0]![1].previewMarkup).toBe("<h1>Title</h1>");
+    expect(body.exercise.previewMarkup).toBe("<h1>Title</h1>");
+    expect(body.exercise.referenceSolution).toBeUndefined();
+  });
+
   it("passes a higher difficulty ladder rung when challengeMode is set", async () => {
     await POST(jsonRequest({ ...VALID_BODY, challengeMode: true }));
 
@@ -177,5 +192,17 @@ describe("POST /api/exercise", () => {
     getLearnerContextMock.mockResolvedValue({ ...FAKE_LEARNER_CONTEXT, learningStyle: "more_theory" });
     await POST(jsonRequest(VALID_BODY));
     expect(generateStructuredMock.mock.calls[0]![0].prompt).toContain("prefers understanding over drilling");
+  });
+
+  it("caps a beginner's difficulty at hard, even at very high mastery", async () => {
+    getLearnerContextMock.mockResolvedValue({ ...FAKE_LEARNER_CONTEXT, level: "beginner" });
+    requireCurrentUserMock.mockResolvedValue({ ...FAKE_USER, level: "beginner" });
+    convexQueryMock.mockImplementation((_query, args) =>
+      Promise.resolve("limit" in args ? [] : { ...TOPIC_DATA, progress: { mastery: { overall: 95 }, attemptsCount: 9 } })
+    );
+
+    await POST(jsonRequest(VALID_BODY));
+
+    expect(generateStructuredMock.mock.calls[0]![0].prompt).toContain("Target difficulty: hard");
   });
 });

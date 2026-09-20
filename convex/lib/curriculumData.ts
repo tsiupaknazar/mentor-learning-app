@@ -1,6 +1,14 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { analyzeCurriculum, isAdHocTopic, usesStrictOrder, type TopicAnalysis, type TopicFacts } from "./curriculum";
+import {
+  analyzeCurriculum,
+  hasLearned,
+  isAdHocTopic,
+  usesStrictOrder,
+  type LearnSessionFacts,
+  type TopicAnalysis,
+  type TopicFacts,
+} from "./curriculum";
 
 /**
  * Loads what convex/lib/curriculum.ts needs for one learning path and runs
@@ -23,13 +31,21 @@ export async function analyzeLearningPath(ctx: QueryCtx, userId: Id<"users">, le
   ).filter((p) => topicIds.has(p.topicId));
   const progressByTopic = new Map(progressRows.map((p) => [p.topicId as string, p]));
 
-  // A completed Learn session is what "having learned" a topic means.
+  // Having "learned" a topic means finishing a Learn session on it with
+  // enough of the answers right (see hasLearned in ./curriculum).
   const sessions = await ctx.db
     .query("sessions")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .collect();
+  const learnSessionsByTopic = new Map<string, LearnSessionFacts[]>();
+  for (const s of sessions) {
+    if (s.completedAt === undefined || s.mode === "practice") continue;
+    const list = learnSessionsByTopic.get(s.topicId) ?? [];
+    list.push({ exercisesPlanned: s.exercisesPlanned, exercisesSucceeded: s.exercisesSucceeded });
+    learnSessionsByTopic.set(s.topicId, list);
+  }
   const learnedTopicIds = new Set<string>(
-    sessions.filter((s) => s.completedAt !== undefined && s.mode !== "practice").map((s) => s.topicId)
+    [...learnSessionsByTopic].filter(([, list]) => hasLearned(list)).map(([topicId]) => topicId)
   );
 
   const facts = new Map<string, TopicFacts>(

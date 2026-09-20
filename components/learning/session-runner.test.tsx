@@ -4,6 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { useMutation } from "convex/react";
 import { SessionRunner } from "./session-runner";
 
+const { collectTestResultsMock, trackMock } = vi.hoisted(() => ({ collectTestResultsMock: vi.fn(), trackMock: vi.fn() }));
+vi.mock("@/lib/analytics/track", () => ({ track: trackMock }));
+vi.mock("@/lib/js-tests", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  collectTestResults: collectTestResultsMock,
+}));
+
 // CodeMirror is out of scope for component tests - stubbed as a plain
 // controlled textarea. The real CodeEditor still runs on top of it, which
 // is the point: the regression under test lives in how CodeEditor is
@@ -68,6 +75,7 @@ let exerciseOverride: Record<string, unknown>;
 // Statuses for successive /api/concept calls (the last one repeats).
 let conceptStatuses: number[];
 let conceptCalls: number;
+let solutionStatus: number;
 
 const CONCEPT = {
   topic: "Closures",
@@ -80,6 +88,8 @@ const CONCEPT = {
 const startSessionMock = vi.fn();
 
 beforeEach(() => {
+  collectTestResultsMock.mockReset().mockResolvedValue(null);
+  trackMock.mockReset();
   localStorage.clear();
   startSessionMock.mockReset().mockResolvedValue("session1");
   script = [{ result: "incorrect", xp: 15, before: 10, after: 14 }];
@@ -88,6 +98,7 @@ beforeEach(() => {
   exerciseOverride = {};
   conceptStatuses = [200];
   conceptCalls = 0;
+  solutionStatus = 200;
   vi.mocked(useMutation).mockReturnValue(startSessionMock as never);
   vi.stubGlobal(
     "fetch",
@@ -95,6 +106,14 @@ beforeEach(() => {
       if (url === "/api/concept") {
         const status = conceptStatuses[Math.min(conceptCalls++, conceptStatuses.length - 1)]!;
         return status === 200 ? jsonResponse({ concept: CONCEPT }) : new Response("{}", { status });
+      }
+      if (url === "/api/hint") {
+        return jsonResponse({ hint: { level: "direction", text: "Think about scope." } });
+      }
+      if (url === "/api/solution") {
+        return solutionStatus === 200
+          ? jsonResponse({ solution: "const counter = () => n++;" })
+          : new Response(JSON.stringify({ error: "solution_unavailable" }), { status: solutionStatus });
       }
       if (url === "/api/exercise") {
         exerciseNumber++;
@@ -833,6 +852,183 @@ describe("SessionRunner", () => {
 
       expect(await screen.findByRole("button", { name: "Show theory" })).toBeInTheDocument();
       expect(conceptFetches()).toBe(0);
+    });
+  });
+
+  describe("whether the topic counts as learned", () => {
+    async function playRound(user: ReturnType<typeof userEvent.setup>, mode: "learn" | "practice") {
+      renderRunner({ mode, dailyTime: "15min" }); // 3 exercises
+      await user.click(screen.getByRole("button", { name: mode === "learn" ? "Start session" : "Start practicing" }));
+      if (mode === "learn") await user.click(await screen.findByRole("button", { name: "Start practicing" }));
+      for (let i = 0; i < 3; i++) {
+        await user.type(await screen.findByLabelText("code"), " x");
+        await user.click(screen.getByRole("button", { name: "Submit answer" }));
+        await user.click(await screen.findByRole("button", { name: "Next exercise" }));
+      }
+      await screen.findByText("Session complete");
+    }
+
+    it("tells a learner whose Learn session went badly that the topic isn't done yet", async () => {
+      script = [{ result: "incorrect", xp: 0, before: 0, after: 0 }];
+      await playRound(userEvent.setup(), "learn");
+      expect(screen.getByText(/isn’t marked done yet/)).toBeInTheDocument();
+    });
+
+    it("doesn't, when enough went right", async () => {
+      script = [
+        { result: "correct", xp: 100, before: 0, after: 20 },
+        { result: "partially_correct", xp: 15, before: 20, after: 25 },
+        { result: "incorrect", xp: 0, before: 25, after: 24 },
+      ];
+      await playRound(userEvent.setup(), "learn");
+      expect(screen.queryByText(/marked done yet/)).not.toBeInTheDocument();
+    });
+
+    it("never mentions it for a Practice drill, which doesn't count toward learning a topic anyway", async () => {
+      script = [{ result: "incorrect", xp: 0, before: 0, after: 0 }];
+      await playRound(userEvent.setup(), "practice");
+      expect(screen.queryByText(/marked done yet/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("analytics", () => {
+    const events = (name: string) => trackMock.mock.calls.filter(([n]) => n === name).map(([, p]) => p);
+
+    it("records a session starting and, when the last exercise is done, finishing", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "practice", dailyTime: "15min" }); // 3 exercises
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      expect(events("session_started")).toEqual([expect.objectContaining({ subtopic: "Closures", mode: "practice", depth: null })]);
+      expect(events("session_completed")).toEqual([]);
+
+      for (let i = 0; i < 3; i++) {
+        await user.type(await screen.findByLabelText("code"), " x");
+        await user.click(screen.getByRole("button", { name: "Submit answer" }));
+        await user.click(await screen.findByRole("button", { name: "Next exercise" }));
+      }
+
+      expect(events("session_completed")).toEqual([expect.objectContaining({ mode: "practice", exercises: 3 })]);
+    });
+
+    it("records which theory depth the learner chose", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn", level: "beginner" });
+      await user.click(screen.getByRole("button", { name: /Quick refresher/ }));
+      expect(events("lesson_depth_selected")).toEqual([{ subtopic: "Closures", depth: "quick", level: "beginner" }]);
+    });
+
+    it("records the solution being shown", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "practice" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await user.type(await screen.findByLabelText("code"), " x");
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await user.click(await screen.findByRole("button", { name: "Show the solution" }));
+      await screen.findByText("Worked solution");
+      expect(events("solution_shown")).toEqual([expect.objectContaining({ subtopic: "Closures", hintsUsed: 0 })]);
+    });
+  });
+
+  describe("sending the code's test results with the answer", () => {
+    const evaluateBody = () =>
+      vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/evaluate").map(([, i]) => JSON.parse(i!.body as string))[0];
+
+    it("runs the tests first and sends what happened", async () => {
+      const results = [{ input: "counter()", expected: "1", actual: "1", passed: true, error: null }];
+      collectTestResultsMock.mockResolvedValue(results);
+      const user = userEvent.setup();
+      renderRunner({ mode: "practice" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await user.type(await screen.findByLabelText("code"), " x");
+
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await screen.findByRole("button", { name: "Next exercise" });
+
+      expect(collectTestResultsMock).toHaveBeenCalledWith(expect.objectContaining({ language: "javascript" }), "// starter x");
+      expect(evaluateBody().testResults).toEqual(results);
+    });
+
+    it("sends none when there's nothing runnable, and doesn't try for answers that aren't code", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "practice" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await user.type(await screen.findByLabelText("code"), " x");
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await screen.findByRole("button", { name: "Next exercise" });
+      expect(evaluateBody().testResults).toBeUndefined();
+
+      collectTestResultsMock.mockClear();
+      exerciseOverride = { type: "explain_code", starterCode: "const a = 1;" };
+      await user.click(screen.getByRole("button", { name: "Next exercise" }));
+      await user.type(await screen.findByPlaceholderText(/reasoning|explain/i), "because");
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/evaluate")).toHaveLength(2));
+      expect(collectTestResultsMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("getting unstuck", () => {
+    async function reachIncorrectFeedback(user: ReturnType<typeof userEvent.setup>) {
+      renderRunner({ mode: "practice" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await user.type(await screen.findByLabelText("code"), " x");
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await screen.findByRole("button", { name: "Next exercise" });
+    }
+
+    it("offers the worked solution after a miss, and keeps it in view while revising", async () => {
+      const user = userEvent.setup();
+      await reachIncorrectFeedback(user);
+      expect(screen.queryByText("Worked solution")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Show the solution" }));
+
+      expect(await screen.findByText("Worked solution")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Show the solution" })).not.toBeInTheDocument();
+      expect(vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/solution")).toHaveLength(1);
+
+      await user.click(screen.getByRole("button", { name: "Revise and resubmit" }));
+      // The editor and the (read-only) solution are both on screen; CodeMirror is stubbed as a textarea.
+      expect(await screen.findByRole("button", { name: "Submit answer" })).toBeInTheDocument();
+      expect(screen.getAllByLabelText("code")).toHaveLength(2);
+      expect(screen.getByText("Worked solution")).toBeInTheDocument();
+
+      // ...and what's submitted from here is flagged as having seen it.
+      await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      await waitFor(() => {
+        const bodies = vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/evaluate").map(([, i]) => JSON.parse(i!.body as string));
+        expect(bodies.at(-1).solutionRevealed).toBe(true);
+      });
+    });
+
+    it("doesn't offer it after a correct answer", async () => {
+      script = [{ result: "correct", xp: 100, before: 0, after: 20 }];
+      const user = userEvent.setup();
+      await reachIncorrectFeedback(user);
+      expect(screen.queryByRole("button", { name: "Show the solution" })).not.toBeInTheDocument();
+    });
+
+    it("says so when the solution can't be loaded, and lets the learner retry", async () => {
+      solutionStatus = 403;
+      const user = userEvent.setup();
+      await reachIncorrectFeedback(user);
+
+      await user.click(screen.getByRole("button", { name: "Show the solution" }));
+
+      expect(await screen.findByRole("alert")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Show the solution" })).toBeEnabled();
+    });
+
+    it("tells someone out of hints what to do next", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "practice" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await screen.findByLabelText("code");
+      expect(screen.queryByText(/see a worked solution/)).not.toBeInTheDocument();
+
+      for (let i = 0; i < 3; i++) await user.click(screen.getByRole("button", { name: /Hint|hint/ }));
+
+      expect(await screen.findByText(/see a worked solution/)).toBeInTheDocument();
     });
   });
 

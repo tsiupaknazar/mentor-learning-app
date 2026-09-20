@@ -420,4 +420,101 @@ describe("activityByDay", () => {
     const userId = await seedUser(t);
     expect(await t.query(api.attempts.activityByDay, { userId, days: 84 })).toEqual([]);
   });
+
+  describe("having been shown the solution", () => {
+    it("counts against every later attempt on that exercise, even if the client says otherwise", async () => {
+      const t = convexTest(schema);
+      const userId = await seedUser(t);
+      const { topicId } = await seedTopic(t, userId);
+      const exerciseId = await seedExercise(t, userId, topicId);
+
+      const before = await t.mutation(api.attempts.recordAttempt, {
+        userId, exerciseId, topicId, ...attemptArgs({ result: "incorrect" }),
+      } as never);
+      expect(before.xpAwarded).toBe(0);
+
+      await t.mutation(api.exercises.markSolutionRevealed, { exerciseId: exerciseId as never });
+      const after = await t.mutation(api.attempts.recordAttempt, {
+        userId, exerciseId, topicId, ...attemptArgs({ solutionRevealed: false }),
+      } as never);
+
+      expect(after.xpAwarded).toBe(40); // not the 100 of a clean correct answer
+      const rows = await t.run((ctx) => ctx.db.query("attempts").collect());
+      expect(rows.map((r) => r.solutionRevealed)).toEqual([false, true]);
+    });
+
+    it("doesn't affect an exercise whose solution was never shown", async () => {
+      const t = convexTest(schema);
+      const userId = await seedUser(t);
+      const { topicId } = await seedTopic(t, userId);
+      const exerciseId = await seedExercise(t, userId, topicId);
+
+      const result = await t.mutation(api.attempts.recordAttempt, { userId, exerciseId, topicId, ...attemptArgs() } as never);
+      expect(result.xpAwarded).toBe(100);
+    });
+  });
+
+  describe("listAttemptsForExercise", () => {
+    it("returns only that exercise's attempts", async () => {
+      const t = convexTest(schema);
+      const userId = await seedUser(t);
+      const { topicId } = await seedTopic(t, userId);
+      const one = await seedExercise(t, userId, topicId);
+      const two = await seedExercise(t, userId, topicId);
+      await t.mutation(api.attempts.recordAttempt, { userId, exerciseId: one, topicId, ...attemptArgs() } as never);
+      await t.mutation(api.attempts.recordAttempt, { userId, exerciseId: two, topicId, ...attemptArgs({ result: "incorrect" }) } as never);
+
+      const rows = await t.query(api.attempts.listAttemptsForExercise, { exerciseId: two as never });
+      expect(rows.map((r) => r.result)).toEqual(["incorrect"]);
+    });
+  });
+
+  describe("counting successes toward the session", () => {
+    async function withSession() {
+      const t = convexTest(schema);
+      const userId = await seedUser(t);
+      const { topicId } = await seedTopic(t, userId);
+      const sessionId = await t.mutation(api.sessions.startSession, {
+        userId, topicId, objective: "o", exercisesPlanned: 3, mode: "learn",
+      } as never);
+      const exerciseIn = (title: string) =>
+        t.run((ctx) =>
+          ctx.db.insert("exercises", {
+            userId, topicId, sessionId, externalId: title, subtopic: "s", type: "debugging", difficulty: "easy",
+            language: "javascript", title, prompt: "p", referenceSolution: "r", createdAt: Date.now(),
+          } as never)
+        );
+      const record = (exerciseId: unknown, result: "correct" | "partially_correct" | "incorrect") =>
+        t.mutation(api.attempts.recordAttempt, { userId, exerciseId, topicId, ...attemptArgs({ result }) } as never);
+      const succeeded = async () => (await t.run((ctx) => ctx.db.get(sessionId)))!.exercisesSucceeded;
+      return { exerciseIn, record, succeeded };
+    }
+
+    it("counts correct and partly correct answers, but not incorrect ones", async () => {
+      const { exerciseIn, record, succeeded } = await withSession();
+      await record(await exerciseIn("a"), "correct");
+      await record(await exerciseIn("b"), "partially_correct");
+      await record(await exerciseIn("c"), "incorrect");
+      expect(await succeeded()).toBe(2);
+    });
+
+    it("counts an exercise once, however many times it's resubmitted", async () => {
+      const { exerciseIn, record, succeeded } = await withSession();
+      const a = await exerciseIn("a");
+      await record(a, "incorrect");
+      expect(await succeeded()).toBeUndefined();
+      await record(a, "correct"); // the revision that got it right
+      await record(a, "correct");
+      expect(await succeeded()).toBe(1);
+    });
+
+    it("leaves a standalone exercise (no session) alone", async () => {
+      const t = convexTest(schema);
+      const userId = await seedUser(t);
+      const { topicId } = await seedTopic(t, userId);
+      const exerciseId = await seedExercise(t, userId, topicId);
+      await t.mutation(api.attempts.recordAttempt, { userId, exerciseId, topicId, ...attemptArgs() } as never);
+      expect(await t.run((ctx) => ctx.db.query("sessions").collect())).toEqual([]);
+    });
+  });
 });

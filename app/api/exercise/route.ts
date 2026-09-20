@@ -47,7 +47,8 @@ export async function POST(req: Request) {
     const difficulty = pickDifficulty(
       topicData.progress?.mastery.overall ?? 0,
       topicData.progress?.attemptsCount ?? 0,
-      body.challengeMode
+      body.challengeMode,
+      user.level
     );
 
     const recentTitles = await convexQuery(api.exercises.listRecentExerciseTitles, {
@@ -100,6 +101,7 @@ export async function POST(req: Request) {
         ? exercise.testCases.map((tc) => ({ ...tc, description: tc.description ?? undefined }))
         : undefined,
       referenceSolution: exercise.referenceSolution,
+      previewMarkup: exercise.previewMarkup ?? undefined,
     });
 
     // Strip the answer key before it ever reaches the browser.

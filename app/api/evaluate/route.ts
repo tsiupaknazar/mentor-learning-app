@@ -23,6 +23,21 @@ const requestSchema = z.object({
   // Headings of the lesson the learner was shown for this topic, if any, so
   // the review can point at the section that covers their mistake.
   lessonSections: z.array(z.string().min(1).max(100)).max(8).optional(),
+  // What the learner's code did against the exercise's tests, run in their
+  // browser (lib/js-tests.ts). Reported by the client, so it informs the
+  // review but is not treated as authoritative.
+  testResults: z
+    .array(
+      z.object({
+        input: z.string().max(500),
+        expected: z.string().max(500),
+        actual: z.string().max(500).nullable(),
+        passed: z.boolean(),
+        error: z.string().max(300).nullable(),
+      })
+    )
+    .max(10)
+    .optional(),
 });
 
 /**
@@ -71,7 +86,8 @@ export async function POST(req: Request) {
       learnerContext,
       exercise,
       body.submittedAnswer,
-      body.lessonSections
+      body.lessonSections,
+      body.testResults
     );
 
     const evaluation = await generateStructured({

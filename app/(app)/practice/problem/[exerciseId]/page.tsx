@@ -55,8 +55,9 @@ export default async function PracticeProblemPage({
     testCases: exerciseRow.testCases
       ? exerciseRow.testCases.map((tc) => ({ ...tc, description: tc.description ?? null }))
       : null,
+    previewMarkup: exerciseRow.previewMarkup ?? null,
     contentLocale: exerciseRow.contentLocale ?? "en",
   };
 
-  return <ProblemSolver exerciseId={exerciseRow._id} exercise={exercise} />;
+  return <ProblemSolver exerciseId={exerciseRow._id} exercise={exercise} level={user.level} />;
 }

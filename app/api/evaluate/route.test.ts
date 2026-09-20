@@ -233,4 +233,26 @@ describe("POST /api/evaluate", () => {
       expect(body.evaluation.relatedLessonSection).toBeNull();
     });
   });
+
+  describe("test results from the learner's browser", () => {
+    const RESULTS = [{ input: "sum(2, 3)", expected: "5", actual: "5", passed: true, error: null }];
+
+    it("hands them to the reviewer", async () => {
+      await POST(jsonRequest({ ...VALID_BODY, testResults: RESULTS }));
+      expect(generateStructuredMock.mock.calls[0]![0].prompt).toContain('"call":"sum(2, 3)"');
+    });
+
+    it("works without them", async () => {
+      const res = await POST(jsonRequest(VALID_BODY));
+      expect(res.status).toBe(200);
+      expect(generateStructuredMock.mock.calls[0]![0].prompt).not.toContain("test cases in their browser");
+    });
+
+    it("rejects malformed or oversized results", async () => {
+      for (const bad of [[{ input: "x" }], Array(11).fill(RESULTS[0]), [{ ...RESULTS[0], actual: "x".repeat(501) }]]) {
+        const res = await POST(jsonRequest({ ...VALID_BODY, testResults: bad }));
+        expect(res.status).toBe(400);
+      }
+    });
+  });
 });

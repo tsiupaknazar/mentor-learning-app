@@ -1,4 +1,6 @@
-import type { ExerciseDifficulty } from "@/types/domain";
+import type { ExerciseDifficulty, SkillLevel } from "@/types/domain";
+
+const LADDER: ExerciseDifficulty[] = ["easy", "medium", "hard", "interview", "real_world"];
 
 /**
  * "Do not generate random difficulty. Difficulty must depend on the user's
@@ -8,7 +10,8 @@ import type { ExerciseDifficulty } from "@/types/domain";
 export function pickDifficulty(
   overallMastery: number,
   attemptsCount: number,
-  challengeMode = false
+  challengeMode = false,
+  level?: SkillLevel
 ): ExerciseDifficulty {
   let base: ExerciseDifficulty;
   if (attemptsCount === 0) {
@@ -23,9 +26,8 @@ export function pickDifficulty(
     base = "interview";
   }
 
-  if (!challengeMode) return base;
-
-  const ladder: ExerciseDifficulty[] = ["easy", "medium", "hard", "interview", "real_world"];
-  const idx = ladder.indexOf(base);
-  return ladder[Math.min(idx + 1, ladder.length - 1)] as ExerciseDifficulty;
+  const bumped = challengeMode ? LADDER[Math.min(LADDER.indexOf(base) + 1, LADDER.length - 1)]! : base;
+  // "Interview" and "real world" assume working experience: a beginner's
+  // ceiling is "hard", however well they are doing.
+  return level === "beginner" && LADDER.indexOf(bumped) > LADDER.indexOf("hard") ? "hard" : bumped;
 }

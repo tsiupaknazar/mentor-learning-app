@@ -1,6 +1,7 @@
 import type { Exercise, KnowledgeProfile } from "@/lib/schemas";
-import type { ConceptDepth, LearnerContext, LearningStyle, Locale } from "@/types/domain";
+import type { ConceptDepth, LearnerContext, LearningStyle, Locale, SkillLevel } from "@/types/domain";
 import type { ScaffoldStep } from "@/lib/scaffolding";
+import type { TestResult } from "@/lib/js-tests";
 import { resolveProjectLanguageScope } from "@/lib/topic-language";
 
 const LANGUAGE_NAMES: Record<Locale, string> = {
@@ -56,6 +57,17 @@ Rules you always follow:
 - Keep feedback concrete and tied to the learner's actual code/answer, never generic advice that could apply to anything.
 - Your goal is to build engineering judgment, not just to mark answers right or wrong.`;
 
+/**
+ * Appended to the mentor persona for an absolute beginner. The persona's
+ * honesty stays (no false praise, correct-but-poor is still called out); what
+ * changes is the delivery and what is held against someone in their first
+ * hours of coding.
+ */
+export const BEGINNER_MENTOR_ADDENDUM = `This learner is an ABSOLUTE BEGINNER, so adapt the delivery, not the honesty: if anything they did is right, say exactly what first (specific, never generic praise); then give the single most important issue in plain words, without jargon; never judge best practices, style or edge cases the exercise didn't ask for - score those fields in line with correctness rather than below it; and do not demand that they justify design choices. Any follow-up question must be a simple, concrete one they can answer by looking at their own code, or null.`;
+
+const mentorPersonaFor = (level: SkillLevel | undefined) =>
+  level === "beginner" ? `${MENTOR_PERSONA}\n\n${BEGINNER_MENTOR_ADDENDUM}` : MENTOR_PERSONA;
+
 // ---------------------------------------------------------------------------
 // Diagnostic assessment
 // ---------------------------------------------------------------------------
@@ -70,7 +82,7 @@ Step 1 (internal, do not include in output): list the core subtopics someone wou
 
 Step 2: write questions so EVERY one of those subtopics gets at least one question, and any subtopic central to the topic gets two questions of different types (e.g. one knowledge question and one debugging question) so a lucky or unlucky single guess can't swing that subtopic's rating. This means the total question count should usually land in the 10-16 range for a broad topic, or 6-10 for a narrow one — do not artificially shrink coverage to save space.
 
-Include at least two debugging questions (show broken code) and at least two implementation questions across the set. For multiple_choice questions, populate "choices"; otherwise set choices to null. Set codeSnippet to null unless the question shows code. Each question needs a stable id (e.g. "q1") and its actual "subtopic" from your step-1 list.`,
+${selfReportedLevel === "not_sure" ? `The learner does not know their level and may never have written code, so order the questions from very gentle to demanding: open with two or three that anyone who has read an introduction could answer (what something is, what a short snippet prints), keep the debugging and implementation questions for the later, harder part and small in scope, and never make the first question a coding task. ` : ""}Include at least two debugging questions (show broken code) and at least two implementation questions across the set. For multiple_choice questions, populate "choices"; otherwise set choices to null. Set codeSnippet to null unless the question shows code. Each question needs a stable id (e.g. "q1") and its actual "subtopic" from your step-1 list.`,
   };
 }
 
@@ -105,7 +117,7 @@ export function buildLearningPathPrompt(
 Requested topic: ${topic}
 Knowledge profile from diagnostic: ${knowledgeProfile ? JSON.stringify(knowledgeProfile) : "none — no diagnostic was taken, assume the learner's self-reported level is accurate"}
 
-Generate a learning path for "${topic}" as a tree of topics (max depth 3, max 12 top-level topics). Each topic needs a short id, title, one-sentence summary, prerequisiteIds referencing earlier topic ids in this same tree (empty array if none), and nested children where useful. Weight time toward ${ctx.weakTopics.length > 0 ? `weak areas: ${ctx.weakTopics.join(", ")}` : "foundational concepts, since no weak areas are known yet"}.`,
+${ctx.level === "beginner" ? `The learner is an ABSOLUTE BEGINNER: make the first topic assume nothing, order topics in the smallest steps that each build on the last (one new idea per topic, teachable and practised in a single short session), never start from an advanced or tool-heavy topic, and only include topics a beginner can do in a browser with no setup. ` : ""}Generate a learning path for "${topic}" as a tree of topics (max depth 3, max 12 top-level topics). Each topic needs a short id, title, one-sentence summary, prerequisiteIds referencing earlier topic ids in this same tree (empty array if none), and nested children where useful. Weight time toward ${ctx.weakTopics.length > 0 ? `weak areas: ${ctx.weakTopics.join(", ")}` : "foundational concepts, since no weak areas are known yet"}.`,
   };
 }
 
@@ -136,9 +148,21 @@ ${topicLines}
 For EACH topic above, generate exactly ${perTopicCounts.easy} easy, ${perTopicCounts.medium} medium, and ${perTopicCounts.hard} hard problems (${total} problems total across all topics).
 Problems already generated recently (do not repeat these, generate distinct problems): ${avoidTitles.length ? avoidTitles.join(", ") : "none"}
 
-Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits each problem — vary it across the set, don't default to implementation every time. Give each a stable id and a short, punchy, LeetCode-style title (e.g. "Two Sum", "Debounce a Function") rather than a generic label. ${exerciseStyleGuidance(ctx.learningStyle) ? `${exerciseStyleGuidance(ctx.learningStyle)} Still vary the types across the set. ` : ""}Set "difficulty" to exactly "easy", "medium", or "hard" for every problem — never use "interview" or "real_world" here. Set "language" per the requirement stated for each topic above. If it's a coding problem, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution.`,
+Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits each problem — vary it across the set, don't default to implementation every time. Give each a stable id and a short, punchy, LeetCode-style title (e.g. "Two Sum", "Debounce a Function") rather than a generic label. ${levelGuidance(ctx.level) ? `${levelGuidance(ctx.level)} ` : ""}${exerciseStyleGuidance(ctx.learningStyle) ? `${exerciseStyleGuidance(ctx.learningStyle)} Still vary the types across the set. ` : ""}Set "difficulty" to exactly "easy", "medium", or "hard" for every problem — never use "interview" or "real_world" here. Set "language" per the requirement stated for each topic above. If it's a coding problem, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution. ${TEST_CASE_RULE} ${PREVIEW_MARKUP_RULE}`,
   };
 }
+
+/**
+ * CSS on its own has nothing to render, so a CSS exercise ships the markup its
+ * styles apply to and the app previews the learner's CSS against it.
+ */
+/**
+ * Test cases the app can actually run (lib/js-tests.ts) need a fixed shape;
+ * free-form ones can't be executed, so JavaScript exercises are asked for it.
+ */
+const TEST_CASE_RULE = `For a javascript exercise whose answer is a function, write each test case's "input" as a single JavaScript expression that calls that function (for example "sum(2, 3)") and its "expectedOutput" as the JSON of the value it should return (for example "5", "[1,2]" or "\\"abc\\""); avoid tests that depend on console output, randomness or time.`;
+
+const PREVIEW_MARKUP_RULE = `Set "previewMarkup" to a small, self-contained HTML fragment (at most about 25 lines, no <style> and no scripts) that the learner's CSS is meant to style when the language is "css" - the starterCode is then only CSS and the exercise prompt should say what the markup contains; for every other language set "previewMarkup" to null.`;
 
 /**
  * Nudges which exercise types get picked, from the learner's stated style.
@@ -152,6 +176,16 @@ export function exerciseStyleGuidance(style: LearningStyle): string {
     return "The learner prefers hands-on practice: lean toward exercises where they write or edit real code (implementation, code_completion, debugging, refactoring, optimize_code, write_tests) over exercises that only ask them to read and explain.";
   }
   return "";
+}
+
+/**
+ * What a beginner can be asked. The full menu includes types (architecture
+ * decisions, code review, comparing implementations) that assume experience,
+ * and "easy" means nothing until it's pinned to what a beginner has just learned.
+ */
+export function levelGuidance(level: SkillLevel): string {
+  if (level !== "beginner") return "";
+  return `This learner is an ABSOLUTE BEGINNER, so use only exercise types a beginner can do: multiple_choice, code_prediction, code_completion, find_the_bug, explain_code (a few lines), debugging (one obvious bug) or a very small implementation - never architecture_decision, compare_implementations, optimize_code, write_tests, review_code or refactoring. Test one idea. Keep any code under about 15 lines, use plain wording, and explain any term the exercise itself needs. "easy" means easy for someone who finished the lesson a few minutes ago.`;
 }
 
 /**
@@ -179,7 +213,9 @@ export function buildExercisePrompt(
   requiredLanguage: string | null,
   scaffold: ScaffoldStep | null = null
 ) {
-  const guidance = [exerciseStyleGuidance(ctx.learningStyle), scaffoldingGuidance(scaffold)].filter(Boolean).join("\n");
+  const guidance = [levelGuidance(ctx.level), exerciseStyleGuidance(ctx.learningStyle), scaffoldingGuidance(scaffold)]
+    .filter(Boolean)
+    .join("\n");
   const languageLine = requiredLanguage
     ? `Language MUST be "${requiredLanguage}" — this topic names that language explicitly, it is not a judgment call.`
     : `Pick whichever of javascript/typescript/html/css/python/sql the subtopic is actually written in — a CSS layout topic should produce CSS, a SQL topic should produce SQL, and so on.`;
@@ -191,7 +227,7 @@ Subtopic: ${subtopic}
 Target difficulty: ${difficulty}
 Exercises the learner has already seen recently (do not repeat these, generate something distinct): ${avoidExerciseTitles.length ? avoidExerciseTitles.join(", ") : "none"}
 
-Generate one exercise. Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, architecture_decision, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits this subtopic and difficulty — vary it, don't default to implementation every time. Give it a stable id. ${languageLine} If it's a coding exercise, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution (even for non-coding types, describe the ideal answer there).${guidance ? `\n\n${guidance}` : ""}
+Generate one exercise. Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, architecture_decision, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits this subtopic and difficulty — vary it, don't default to implementation every time. Give it a stable id. ${languageLine} If it's a coding exercise, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution (even for non-coding types, describe the ideal answer there). ${TEST_CASE_RULE} ${PREVIEW_MARKUP_RULE}${guidance ? `\n\n${guidance}` : ""}
 
 HARD CONSTRAINT: this exercise must test ONLY "${subtopic}" itself, regardless of difficulty. Do not pull in concepts, APIs, or techniques that belong to a different topic in the learner's path — especially a more advanced one they haven't reached yet, since the learner may not have unlocked it. Raise difficulty by testing "${subtopic}" more rigorously (deeper edge cases, subtler bugs, less hand-holding, higher ambiguity), never by importing material from outside it.`,
   };
@@ -205,13 +241,17 @@ export function buildEvaluationPrompt(
   ctx: LearnerContext,
   exercise: Exercise,
   userAnswer: string,
-  lessonSections: string[] = []
+  lessonSections: string[] = [],
+  testResults: TestResult[] = []
 ) {
+  const testLine = testResults.length
+    ? `\nThe learner's code was run against the exercise's test cases in their browser (client-reported, so weigh it as strong evidence but still read the code): ${JSON.stringify(testResults.map((r) => ({ call: r.input, expected: r.expected, got: r.actual, passed: r.passed, error: r.error })))}. ${testResults.every((r) => r.passed) ? "Every case passed: do not mark the answer incorrect unless you can point to a specific way the code is still wrong for the exercise." : "Some cases failed: name which case fails and why, rather than a generic complaint."}\n`
+    : "";
   const lessonLine = lessonSections.length
     ? `The learner was just taught these lesson sections on this topic: ${JSON.stringify(lessonSections)}. If their mistake shows they misunderstood something one of those sections covers, set "relatedLessonSection" to that section's heading EXACTLY as written above; otherwise (including for a correct answer) set it to null.`
     : `Set "relatedLessonSection" to null.`;
   return {
-    system: `${MENTOR_PERSONA}\n\nYou are reviewing a submitted answer against a specific exercise. Return ONLY JSON matching the required schema — the "whatYouDid", "problem", "whyItMatters", "hint", and "nextStep" fields map directly to a structured feedback panel the learner will read, so write each as a short, direct statement (1-3 sentences), never a wall of text.${languageInstruction(ctx.locale)}`,
+    system: `${mentorPersonaFor(ctx.level)}\n\nYou are reviewing a submitted answer against a specific exercise. Return ONLY JSON matching the required schema — the "whatYouDid", "problem", "whyItMatters", "hint", and "nextStep" fields map directly to a structured feedback panel the learner will read, so write each as a short, direct statement (1-3 sentences), never a wall of text.${languageInstruction(ctx.locale)}`,
     prompt: `Learner context: ${formatLearnerContext(ctx)}
 
 Exercise:
@@ -222,7 +262,7 @@ ${exercise.referenceSolution}
 
 Learner's submitted answer:
 ${userAnswer}
-
+${testLine}
 Evaluate correctness, logic, code quality, best practices, and edge case handling (0-100 each). Set "result" to correct/partially_correct/incorrect. If the answer is correct but poorly implemented, "result" should still reflect that nuance in the scores (e.g. correctness high, codeQuality low) — do not inflate the overall read of quality just because it runs. If a specific misconception is evident (not just a typo), name it in "detectedMisconception" (in the learner's language) AND give "detectedMisconceptionKey": a short, stable identifier for it in English, kebab-case, 2-5 words (e.g. "off-by-one-loop-bound", "missing-await", "mutating-state-directly") — this is what the app uses to recognize the SAME misconception recurring later even if the learner's display language changes, so keep it consistent and specific to the actual error, not generic. Otherwise set both to null. If the learner's stated reasoning is vague or unjustified, add a direct challenging question in "mentorFollowUp" (e.g. asking them to justify a choice) — the learner WILL be able to type a reply to it, so only ask something they can meaningfully answer in a sentence or two, never rhetorical; otherwise null. ${lessonLine}`,
   };
 }
@@ -241,7 +281,7 @@ export function buildFollowUpReactionPrompt(
   learnerResponse: string
 ) {
   return {
-    system: `${MENTOR_PERSONA}\n\nYou asked the learner a direct follow-up question about their submitted answer; they've now replied. React briefly — 1-3 sentences, never a wall of text. If their reasoning now holds up, say specifically what's now correct (no generic praise). If it's still vague, wrong, or dodges the question, push back again, sharper and more specific than your original question. Set "resolved" to true only if their reply actually demonstrates understanding, not just if they attempted an answer. Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
+    system: `${mentorPersonaFor(ctx.level)}\n\nYou asked the learner a direct follow-up question about their submitted answer; they've now replied. React briefly — 1-3 sentences, never a wall of text. If their reasoning now holds up, say specifically what's now correct (no generic praise). If it's still vague, wrong, or dodges the question, push back again, sharper and more specific than your original question. Set "resolved" to true only if their reply actually demonstrates understanding, not just if they attempted an answer. Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
     prompt: `Learner context: ${formatLearnerContext(ctx)}
 
 Exercise: ${exercise.title}
@@ -480,7 +520,8 @@ export function buildHintPrompt(
   exercise: Exercise,
   hintLevel: "direction" | "specific_problem" | "strong_hint",
   learnerAttemptSoFar: string | null,
-  locale: Locale = "en"
+  locale: Locale = "en",
+  learnerLevel?: SkillLevel
 ) {
   const levelInstruction: Record<typeof hintLevel, string> = {
     direction: "Point toward the relevant concept only. Do not describe the bug or the approach.",
@@ -490,7 +531,7 @@ export function buildHintPrompt(
       "Explain the correct approach in words, but do NOT write the complete implementation or final answer.",
   };
   return {
-    system: `${MENTOR_PERSONA}\n\nYou give progressive hints. Never skip ahead to a later hint level's amount of detail. Return ONLY JSON matching the required schema.${languageInstruction(locale)}`,
+    system: `${mentorPersonaFor(learnerLevel)}\n\nYou give progressive hints. Never skip ahead to a later hint level's amount of detail. Return ONLY JSON matching the required schema.${languageInstruction(locale)}`,
     prompt: `Exercise: ${JSON.stringify({ title: exercise.title, prompt: exercise.prompt, type: exercise.type })}
 Reference solution (for your eyes only): ${exercise.referenceSolution}
 Learner's attempt so far: ${learnerAttemptSoFar ?? "(no attempt yet)"}

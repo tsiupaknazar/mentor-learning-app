@@ -20,6 +20,7 @@ export function SessionSummary({
   backHref,
   backLabel,
   onAnotherRound,
+  notYetDone = false,
 }: {
   log: RoundLog;
   topicTitle: string;
@@ -27,6 +28,8 @@ export function SessionSummary({
   backHref: string;
   backLabel: string;
   onAnotherRound: () => void;
+  /** A Learn session that didn't get enough right to count as having learned the topic. */
+  notYetDone?: boolean;
 }) {
   const { t } = useLocale();
   const { correct, total, xp } = roundTotals(log);
@@ -41,6 +44,12 @@ export function SessionSummary({
           <p className="font-mono-tabular text-2xl font-semibold">{t.session.summaryCorrect(correct, total)}</p>
         )}
       </div>
+
+      {notYetDone && (
+        <p role="status" className="rounded-lg border border-border bg-surface p-4 text-sm text-foreground/90">
+          {t.session.summaryNotYet}
+        </p>
+      )}
 
       {total > 0 && (
         <RewardStrip

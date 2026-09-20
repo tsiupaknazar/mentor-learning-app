@@ -10,9 +10,10 @@ import { orderTopicsForLearning } from "./topicOrder";
  * drill can't satisfy, and an order that doesn't depend on the AI's own
  * (frequently empty) prerequisite lists.
  *
- *  - A topic is **passed** when it is mastered, or the learner has finished a
- *    Learn session on it. Attempts made while drilling in Practice never pass
- *    a topic by themselves.
+ *  - A topic is **passed** when it is mastered, or the learner has *learned* it:
+ *    finished a Learn session in which about half the answers were right (or
+ *    finished two, so nobody is stuck on a topic for good). Attempts made while
+ *    drilling in Practice never pass a topic by themselves.
  *  - Topics are taken in path order (parents before their children).
  *  - A topic is **blocked** when
  *      - "order": the learner is on a strict path (beginners) and an earlier
@@ -71,6 +72,29 @@ export function isAdHocTopic(topic: Pick<CurriculumTopic, "adHoc" | "summary">):
  */
 export function usesStrictOrder(level: string | undefined | null): boolean {
   return level === "beginner";
+}
+
+/** The share of a Learn session's exercises that must be answered right (fully or partly) for it to count as having learned the topic. */
+export const LEARN_SUCCESS_SHARE = 0.5;
+/** After this many finished Learn sessions a topic counts as learned regardless, so a struggling learner isn't held on it for good. */
+export const MAX_LEARN_ROUNDS = 2;
+
+export interface LearnSessionFacts {
+  exercisesPlanned: number;
+  /** Exercises answered correctly or partly correctly; absent on sessions from before it was tracked. */
+  exercisesSucceeded?: number;
+}
+
+/** Whether one finished Learn session is enough, by itself, to count as having learned the topic. */
+export function learnSessionQualifies(session: LearnSessionFacts): boolean {
+  // Sessions from before success was tracked keep counting: nobody loses progress.
+  if (session.exercisesSucceeded === undefined) return true;
+  return session.exercisesSucceeded >= Math.ceil(session.exercisesPlanned * LEARN_SUCCESS_SHARE);
+}
+
+/** Whether a topic has been learned, given its finished Learn sessions. */
+export function hasLearned(finishedLearnSessions: LearnSessionFacts[]): boolean {
+  return finishedLearnSessions.some(learnSessionQualifies) || finishedLearnSessions.length >= MAX_LEARN_ROUNDS;
 }
 
 export function isPassed(facts: TopicFacts | undefined): boolean {

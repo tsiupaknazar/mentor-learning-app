@@ -270,6 +270,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
             ))}
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">{t.onboarding.levelHints[level]}</p>
       </div>
 
       {/* Goal / style / time have sensible defaults - out of the way, but one click from changing. */}

@@ -40,6 +40,25 @@ describe("FeedbackPanel: revisiting the lesson", () => {
   });
 });
 
+describe("FeedbackPanel: compact scores for beginners", () => {
+  it("hides the score bars behind a toggle", async () => {
+    render(<FeedbackPanel evaluation={BASE_EVALUATION} compactScores />);
+    expect(screen.queryByText("Score breakdown")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Show detailed scores" }));
+    expect(screen.getByText("Score breakdown")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide detailed scores" }));
+    expect(screen.queryByText("Score breakdown")).not.toBeInTheDocument();
+  });
+
+  it("shows them straight away otherwise", () => {
+    render(<FeedbackPanel evaluation={BASE_EVALUATION} />);
+    expect(screen.getByText("Score breakdown")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show detailed scores" })).not.toBeInTheDocument();
+  });
+});
+
 describe("FeedbackPanel", () => {
   it.each([
     ["correct", "Correct"],

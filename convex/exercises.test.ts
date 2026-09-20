@@ -171,3 +171,21 @@ describe("listRecentExerciseTitles", () => {
     expect(titles).toEqual(["Second"]);
   });
 });
+
+describe("markSolutionRevealed", () => {
+  it("records when the solution was shown, and keeps the first time", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { topicId } = await seedTopic(t, userId);
+    const exerciseId = await t.mutation(api.exercises.saveGeneratedExercise, { userId, ...exerciseArgs(topicId) } as never);
+    expect((await t.run((ctx) => ctx.db.get(exerciseId)))!.solutionRevealedAt).toBeUndefined();
+
+    await t.mutation(api.exercises.markSolutionRevealed, { exerciseId });
+    const first = (await t.run((ctx) => ctx.db.get(exerciseId)))!.solutionRevealedAt;
+    expect(first).toBeTypeOf("number");
+
+    await new Promise((r) => setTimeout(r, 5));
+    await t.mutation(api.exercises.markSolutionRevealed, { exerciseId });
+    expect((await t.run((ctx) => ctx.db.get(exerciseId)))!.solutionRevealedAt).toBe(first);
+  });
+});

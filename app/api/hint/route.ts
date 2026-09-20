@@ -56,7 +56,8 @@ export async function POST(req: Request) {
       exercise,
       body.hintLevel,
       body.learnerAttemptSoFar,
-      user.locale ?? "en"
+      user.locale ?? "en",
+      user.level
     );
     const hint = await generateStructured({
       schema: hintSchema,

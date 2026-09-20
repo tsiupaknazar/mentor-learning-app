@@ -259,6 +259,7 @@ export function NewPathFlow({
             ))}
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">{t.onboarding.levelHints[level]}</p>
       </div>
 
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

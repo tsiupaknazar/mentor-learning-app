@@ -214,3 +214,17 @@ describe("OnboardingFlow form", () => {
     expect(bodyOf("/api/learning-path").topic).toBe("JavaScript");
   });
 });
+
+describe("OnboardingFlow: what each level means", () => {
+  it("explains the selected level under the picker, and points a first-timer away from the quiz", async () => {
+    const user = userEvent.setup();
+    render(<OnboardingFlow userId={"user1" as never} />);
+
+    expect(screen.getByText(/Start here if you've never coded/)).toBeInTheDocument(); // Beginner, the default
+
+    await pickNotSure(user);
+
+    expect(screen.queryByText(/Start here if you've never coded/)).not.toBeInTheDocument();
+    expect(screen.getByText(/If you've never coded, choose Beginner instead/)).toBeInTheDocument();
+  });
+});

@@ -66,6 +66,7 @@ export interface Dictionary {
     goals: Record<LearningGoal, string>;
     levelLabel: string;
     levels: Record<SkillLevel | "not_sure", string>;
+    levelHints: Record<SkillLevel | "not_sure", string>;
     topicLabel: string;
     presetTopics: string[];
     customTopicPlaceholder: string;
@@ -122,6 +123,8 @@ export interface Dictionary {
     topicsMastered: string;
     streak: string;
     xp: string;
+    /** One plain sentence under each figure: what it measures and how it moves. */
+    statHints: { overallMastery: string; topicsMastered: string; streak: string; xp: string };
     needsReview: string;
     viewAll: string;
     reviewButton: string;
@@ -220,6 +223,11 @@ export interface Dictionary {
     noMoreHints: string;
     markSolutionRevealed: string;
     solutionMarked: string;
+    stuckNote: string;
+    showSolution: string;
+    solutionTitle: string;
+    solutionNote: string;
+    couldNotLoadSolution: string;
     couldNotGenerateExercise: string;
     couldNotStartSession: string;
     couldNotEvaluate: string;
@@ -232,6 +240,7 @@ export interface Dictionary {
     summaryAnswers: string;
     summaryReview: string;
     summaryViewMistakes: string;
+    summaryNotYet: string;
     resumeTitle: string;
     resumeDescription: (done: number, total: number) => string;
     resume: string;
@@ -300,6 +309,8 @@ export interface Dictionary {
     rewardMastery: (from: number, to: number) => string;
     rewardAchievement: string;
     scoreBreakdown: string;
+    showScores: string;
+    hideScores: string;
     scoreLabels: Record<"correctness" | "logic" | "codeQuality" | "bestPractices" | "edgeCaseHandling", string>;
   };
   knowledgeMap: {
@@ -425,6 +436,13 @@ export interface Dictionary {
     error: string;
     noConsoleOutput: string;
     timedOut: string;
+    preview: string;
+    runTests: string;
+    runningTests: string;
+    testsSummary: (passed: number, total: number) => string;
+    testGot: (actual: string) => string;
+    testExpected: (expected: string) => string;
+    testsUnavailable: string;
   };
   interview: {
     title: string;
@@ -531,6 +549,13 @@ const en: Dictionary = {
       advanced: "Advanced",
       not_sure: "I'm not sure \u2014 test me",
     },
+    levelHints: {
+      beginner: "New to this, with little or no experience. Start here if you've never coded.",
+      junior: "You've built small things, but the fundamentals still feel shaky.",
+      intermediate: "You build real features and want to go deeper.",
+      advanced: "You work with this every day and want to fill gaps or go further.",
+      not_sure: "A short quiz places you. If you've never coded, choose Beginner instead \u2014 the quiz is not for first-timers.",
+    },
     topicLabel: "What do you want to learn?",
     presetTopics: [
       "JavaScript",
@@ -615,6 +640,12 @@ const en: Dictionary = {
     topicsMastered: "Topics mastered",
     streak: "Streak",
     xp: "XP",
+    statHints: {
+      overallMastery: "How well you can actually do what you've practiced, out of 100%.",
+      topicsMastered: "Topics where you've reached a solid grasp.",
+      streak: "Days in a row you've practiced.",
+      xp: "Points for correct answers \u2014 more when you don't need hints.",
+    },
     needsReview: "Needs review",
     viewAll: "View all",
     reviewButton: "Start review",
@@ -713,6 +744,11 @@ const en: Dictionary = {
     hintLabel: (n) => `Hint ${n}`,
     noMoreHints: "No more hints",
     markSolutionRevealed: "I looked up the answer (earns less XP)",
+    stuckNote: "Stuck? Submit your best attempt \u2014 after the feedback you can see a worked solution.",
+    showSolution: "Show the solution",
+    solutionTitle: "Worked solution",
+    solutionNote: "Read it, then close it and write it out yourself. Answers from here earn less XP.",
+    couldNotLoadSolution: "Could not load the solution. Try again.",
     solutionMarked: "Noted \u2014 this attempt will earn less XP.",
     couldNotGenerateExercise: "Could not generate an exercise. Try again.",
     couldNotStartSession: "Could not start the session. Try again.",
@@ -725,6 +761,8 @@ const en: Dictionary = {
     summaryCorrect: (correct, total) => `${correct} of ${total} correct`,
     summaryAnswers: "Your answers",
     summaryReview: "Worth reviewing",
+    summaryNotYet:
+      "This topic isn\u2019t marked done yet \u2014 about half of your answers need to be right. Another round counts toward it, and the lesson is still there to reread.",
     summaryViewMistakes: "See all mistakes",
     resumeTitle: "Unfinished session",
     resumeDescription: (done, total) => `You've completed ${done} of ${total} exercises \u2014 pick up where you left off.`,
@@ -803,6 +841,8 @@ const en: Dictionary = {
     rewardMastery: (from, to) => `Topic mastery ${from}% \u2192 ${to}%`,
     rewardAchievement: "Achievement unlocked",
     scoreBreakdown: "Score breakdown",
+    showScores: "Show detailed scores",
+    hideScores: "Hide detailed scores",
     scoreLabels: {
       correctness: "Correctness",
       logic: "Logic",
@@ -953,6 +993,13 @@ const en: Dictionary = {
     error: "Error",
     noConsoleOutput: "(no console output)",
     timedOut: "Timed out after 3s (possible infinite loop).",
+    preview: "Preview",
+    runTests: "Run tests",
+    runningTests: "Running tests\u2026",
+    testsSummary: (passed, total) => `${passed} of ${total} tests pass`,
+    testGot: (actual) => `got ${actual}`,
+    testExpected: (expected) => `expected ${expected}`,
+    testsUnavailable: "Tests can't run in this browser.",
   },
   interview: {
     title: "Interview practice \u2014 coming soon",
@@ -1069,6 +1116,13 @@ const uk: Dictionary = {
       advanced: "Просунутий рівень",
       not_sure: "Не впевнений — перевірте мене",
     },
+    levelHints: {
+      beginner: "Ви новачок або майже без досвіду. Обирайте це, якщо ніколи не програмували.",
+      junior: "Ви вже створювали невеликі речі, але основи ще хитаються.",
+      intermediate: "Ви робите справжні функції й хочете заглибитися.",
+      advanced: "Ви працюєте з цим щодня й хочете закрити прогалини чи піти далі.",
+      not_sure: "Короткий тест визначить рівень. Якщо ви ніколи не програмували, обирайте «Початківець» — тест не для тих, хто щойно починає.",
+    },
     topicLabel: "Що ви хочете вивчити?",
     presetTopics: [
       "JavaScript",
@@ -1153,6 +1207,12 @@ const uk: Dictionary = {
     topicsMastered: "Опановано тем",
     streak: "Серія",
     xp: "Досвід (XP)",
+    statHints: {
+      overallMastery: "Наскільки добре ви справді вмієте те, що практикували, у відсотках.",
+      topicsMastered: "Теми, які ви засвоїли добре.",
+      streak: "Скільки днів поспіль ви займалися.",
+      xp: "Бали за правильні відповіді — більше, якщо не потрібні підказки.",
+    },
     needsReview: "Потребує повторення",
     viewAll: "Переглянути всі",
     reviewButton: "Почати повторення",
@@ -1251,6 +1311,11 @@ const uk: Dictionary = {
     hintLabel: (n) => `Підказка ${n}`,
     noMoreHints: "Підказок більше немає",
     markSolutionRevealed: "Я підглянув(-ла) відповідь (менше XP)",
+    stuckNote: "Застрягли? Надішліть свою найкращу спробу — після фідбеку можна побачити розібраний розв'язок.",
+    showSolution: "Показати розв'язок",
+    solutionTitle: "Розібраний розв'язок",
+    solutionNote: "Прочитайте, потім закрийте й напишіть самі. Відповіді звідси дають менше XP.",
+    couldNotLoadSolution: "Не вдалося завантажити розв'язок. Спробуйте ще раз.",
     solutionMarked: "Враховано \u2014 за цю спробу буде менше XP.",
     couldNotGenerateExercise: "Не вдалося створити вправу. Спробуйте ще раз.",
     couldNotStartSession: "Не вдалося розпочати сесію. Спробуйте ще раз.",
@@ -1263,6 +1328,8 @@ const uk: Dictionary = {
     summaryCorrect: (correct, total) => `${correct} з ${total} правильно`,
     summaryAnswers: "Ваші відповіді",
     summaryReview: "Варто повторити",
+    summaryNotYet:
+      "Тема ще не зарахована — приблизно половина відповідей має бути правильною. Ще один раунд зарахується, а урок можна перечитати.",
     summaryViewMistakes: "Усі помилки",
     resumeTitle: "Незавершена сесія",
     resumeDescription: (done, total) => `Ви виконали ${done} з ${total} вправ \u2014 продовжте з того місця, де зупинилися.`,
@@ -1341,6 +1408,8 @@ const uk: Dictionary = {
     rewardMastery: (from, to) => `Опанування теми ${from}% \u2192 ${to}%`,
     rewardAchievement: "Досягнення розблоковано",
     scoreBreakdown: "Розбір оцінки",
+    showScores: "Показати детальні оцінки",
+    hideScores: "Сховати детальні оцінки",
     scoreLabels: {
       correctness: "Правильність",
       logic: "Логіка",
@@ -1491,6 +1560,13 @@ const uk: Dictionary = {
     error: "Помилка",
     noConsoleOutput: "(немає виводу в консолі)",
     timedOut: "Час вийшов через 3с (можливо, нескінченний цикл).",
+    preview: "Попередній перегляд",
+    runTests: "Запустити тести",
+    runningTests: "Тести виконуються…",
+    testsSummary: (passed, total) => `Проходять ${passed} з ${total} тестів`,
+    testGot: (actual) => `отримано ${actual}`,
+    testExpected: (expected) => `очікувалось ${expected}`,
+    testsUnavailable: "У цьому браузері тести не запускаються.",
   },
   interview: {
     title: "Практика співбесід — незабаром",

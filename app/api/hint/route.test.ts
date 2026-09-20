@@ -86,4 +86,13 @@ describe("POST /api/hint", () => {
     expect(body.error).toBe("topic_locked");
     expect(generateStructuredMock).not.toHaveBeenCalled();
   });
+
+  it("gives a beginner the gentler mentor voice", async () => {
+    requireCurrentUserMock.mockResolvedValue({ ...FAKE_USER, level: "beginner" });
+    generateStructuredMock.mockResolvedValue({ level: "direction", text: "Think about scope." });
+
+    await POST(jsonRequest(VALID_BODY));
+
+    expect(generateStructuredMock.mock.calls[0]![0].system).toContain("ABSOLUTE BEGINNER");
+  });
 });

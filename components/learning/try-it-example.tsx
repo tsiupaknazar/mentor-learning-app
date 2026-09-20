@@ -7,6 +7,7 @@ import { oneDark } from "@codemirror/theme-one-dark";
 import type { ProgrammingLanguage } from "@/types/domain";
 import { languageExtension } from "@/lib/code-languages";
 import { CodeEditor } from "@/components/learning/code-editor";
+import { LivePreview } from "@/components/learning/live-preview";
 import { useLocale } from "@/lib/i18n/locale-context";
 
 /**
@@ -41,9 +42,7 @@ function HtmlPlayground({ code }: { code: string }) {
           basicSetup={{ lineNumbers: true, foldGutter: false, highlightActiveLine: true }}
         />
       </div>
-      <div className="overflow-hidden rounded-md border border-border bg-white">
-        <iframe title={t.concept.tryItPreview} srcDoc={html} sandbox="allow-scripts" className="h-40 w-full" />
-      </div>
+      <LivePreview srcDoc={html} title={t.concept.tryItPreview} />
     </div>
   );
 }

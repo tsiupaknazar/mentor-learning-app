@@ -74,6 +74,18 @@ describe("buildDiagnosticPrompt", () => {
   });
 });
 
+describe("buildDiagnosticPrompt: for someone who doesn't know their level", () => {
+  it("opens gently and saves the coding tasks for later", () => {
+    const { prompt } = buildDiagnosticPrompt("JavaScript", "not_sure");
+    expect(prompt).toContain("may never have written code");
+    expect(prompt).toContain("very gentle to demanding");
+  });
+
+  it("is unchanged for someone who chose a level", () => {
+    expect(buildDiagnosticPrompt("JavaScript", "junior").prompt).not.toContain("very gentle");
+  });
+});
+
 describe("buildKnowledgeProfilePrompt", () => {
   it("embeds the answered questions as JSON", () => {
     const { prompt } = buildKnowledgeProfilePrompt("SQL", [
@@ -98,6 +110,18 @@ describe("buildLearningPathPrompt", () => {
   it("mentions there was no diagnostic when knowledgeProfile is null", () => {
     const { prompt } = buildLearningPathPrompt(ctx(), "JavaScript", null);
     expect(prompt).toContain("no diagnostic was taken");
+  });
+});
+
+describe("buildLearningPathPrompt: for a beginner", () => {
+  it("asks for the smallest steps, starting from nothing", () => {
+    const { prompt } = buildLearningPathPrompt(ctx({ level: "beginner" }), "HTML & CSS", null);
+    expect(prompt).toContain("ABSOLUTE BEGINNER");
+    expect(prompt).toContain("one new idea per topic");
+  });
+
+  it("doesn't for anyone else", () => {
+    expect(buildLearningPathPrompt(ctx({ level: "junior" }), "HTML & CSS", null).prompt).not.toContain("ABSOLUTE BEGINNER");
   });
 });
 
@@ -273,6 +297,86 @@ describe("buildExercisePrompt: learning style and scaffolding", () => {
     expect(build({}, 0)).toContain("ONE clearly marked blank");
     expect(build({}, 1)).toContain("fade the support");
     expect(build({}, null)).not.toContain("SCAFFOLDING");
+  });
+});
+
+describe("beginner-appropriate exercises and tone", () => {
+  const BEGINNER = { level: "beginner" as const };
+
+  it("restricts a beginner to exercise types they can do, for single exercises and the batch", () => {
+    const single = buildExercisePrompt(ctx(BEGINNER), "JS", "loops", "easy", [], null).prompt;
+    const batch = buildPracticeProblemSetPrompt(ctx(BEGINNER), [{ title: "Loops", language: null }], { easy: 1, medium: 1, hard: 1 }, []).prompt;
+    for (const prompt of [single, batch]) {
+      expect(prompt).toContain("ABSOLUTE BEGINNER");
+      expect(prompt).toContain("never architecture_decision");
+      expect(prompt).toContain("under about 15 lines");
+    }
+  });
+
+  it("doesn't restrict anyone else", () => {
+    for (const level of ["junior", "intermediate", "advanced"] as const) {
+      expect(buildExercisePrompt(ctx({ level }), "JS", "loops", "easy", [], null).prompt).not.toContain("ABSOLUTE BEGINNER");
+    }
+  });
+
+  it("softens the delivery of a beginner's review, hint and follow-up, without dropping the mentor's honesty", () => {
+    const reviews = [
+      buildEvaluationPrompt(ctx(BEGINNER), EXERCISE, "answer").system,
+      buildHintPrompt(EXERCISE, "direction", null, "en", "beginner").system,
+      buildFollowUpReactionPrompt(ctx(BEGINNER), EXERCISE, "Why?", "because").system,
+    ];
+    for (const system of reviews) {
+      expect(system).toContain("ABSOLUTE BEGINNER");
+      expect(system).toContain("Never give unearned praise");
+    }
+  });
+
+  it("keeps the demanding mentor for everyone else", () => {
+    expect(buildEvaluationPrompt(ctx({ level: "junior" }), EXERCISE, "answer").system).not.toContain("ABSOLUTE BEGINNER");
+    expect(buildHintPrompt(EXERCISE, "direction", null, "en", "advanced").system).not.toContain("ABSOLUTE BEGINNER");
+    expect(buildHintPrompt(EXERCISE, "direction", null).system).not.toContain("ABSOLUTE BEGINNER");
+  });
+});
+
+describe("CSS exercises carry their own markup for the preview", () => {
+  it("asks for previewMarkup on single exercises and on the practice batch", () => {
+    const single = buildExercisePrompt(ctx(), "CSS", "Selectors", "easy", [], "css").prompt;
+    expect(single).toContain('"previewMarkup"');
+    const batch = buildPracticeProblemSetPrompt(ctx(), [{ title: "CSS", language: "css" }], { easy: 1, medium: 1, hard: 1 }, []).prompt;
+    expect(batch).toContain('"previewMarkup"');
+  });
+});
+
+describe("test cases the app can run", () => {
+  it("asks JavaScript exercises for calls and JSON values, on both prompts", () => {
+    const single = buildExercisePrompt(ctx(), "JS", "sum", "easy", [], "javascript").prompt;
+    const batch = buildPracticeProblemSetPrompt(ctx(), [{ title: "JS", language: "javascript" }], { easy: 1, medium: 1, hard: 1 }, []).prompt;
+    for (const prompt of [single, batch]) {
+      expect(prompt).toContain('"sum(2, 3)"');
+      expect(prompt).toContain("JSON of the value");
+    }
+  });
+});
+
+describe("buildEvaluationPrompt: test results", () => {
+  const passing = { input: "sum(2, 3)", expected: "5", actual: "5", passed: true, error: null };
+  const failing = { input: "sum(2, 2)", expected: "5", actual: "4", passed: false, error: null };
+
+  it("puts the results in front of the reviewer, and tells it not to fail code that passes", () => {
+    const { prompt } = buildEvaluationPrompt(ctx(), EXERCISE, "answer", [], [passing]);
+    expect(prompt).toContain('"call":"sum(2, 3)"');
+    expect(prompt).toContain("Every case passed");
+    expect(prompt).toContain("client-reported");
+  });
+
+  it("asks to name the failing case when some fail", () => {
+    const { prompt } = buildEvaluationPrompt(ctx(), EXERCISE, "answer", [], [passing, failing]);
+    expect(prompt).toContain("Some cases failed");
+    expect(prompt).not.toContain("Every case passed");
+  });
+
+  it("says nothing about tests when none were run", () => {
+    expect(buildEvaluationPrompt(ctx(), EXERCISE, "answer").prompt).not.toContain("test cases in their browser");
   });
 });
 

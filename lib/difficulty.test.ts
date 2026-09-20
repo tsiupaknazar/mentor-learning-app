@@ -37,4 +37,23 @@ describe("pickDifficulty", () => {
       expect(pickDifficulty(90, 5, true)).toBe("real_world");
     });
   });
+
+  describe("for a beginner", () => {
+    it("never goes past hard, however well they're doing or however hard they push", () => {
+      expect(pickDifficulty(95, 9, false, "beginner")).toBe("hard");
+      expect(pickDifficulty(70, 9, true, "beginner")).toBe("hard");
+      expect(pickDifficulty(95, 9, true, "beginner")).toBe("hard");
+    });
+
+    it("is otherwise the same ladder", () => {
+      expect(pickDifficulty(0, 0, false, "beginner")).toBe("easy");
+      expect(pickDifficulty(40, 5, false, "beginner")).toBe("medium");
+      expect(pickDifficulty(0, 0, true, "beginner")).toBe("medium");
+    });
+
+    it("leaves everyone else's ladder alone", () => {
+      expect(pickDifficulty(90, 5, false, "junior")).toBe("interview");
+      expect(pickDifficulty(90, 5, true, "advanced")).toBe("real_world");
+    });
+  });
 });

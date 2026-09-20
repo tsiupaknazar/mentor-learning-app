@@ -119,6 +119,7 @@ export const exerciseGeminiSchema: Schema = {
       },
     },
     referenceSolution: { type: Type.STRING },
+    previewMarkup: { type: Type.STRING, nullable: true },
   },
   required: [
     "id",
@@ -133,6 +134,7 @@ export const exerciseGeminiSchema: Schema = {
     "choices",
     "testCases",
     "referenceSolution",
+    "previewMarkup",
   ],
 };
 

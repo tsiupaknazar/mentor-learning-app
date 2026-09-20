@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   analyzeCurriculum,
   findNextTopic,
+  hasLearned,
   isAdHocTopic,
+  learnSessionQualifies,
   usesStrictOrder,
   type CurriculumTopic,
   type TopicFacts,
@@ -198,5 +200,31 @@ describe("findNextTopic", () => {
     const all = analyze(PATH, { html: { learned: true }, selectors: { learned: true }, flexbox: { learned: true } }, true);
     expect(findNextTopic(PATH, all)).toBeNull();
     expect(findNextTopic([], new Map())).toBeNull();
+  });
+});
+
+describe("having learned a topic", () => {
+  it("takes about half the session's answers right", () => {
+    expect(learnSessionQualifies({ exercisesPlanned: 5, exercisesSucceeded: 3 })).toBe(true);
+    expect(learnSessionQualifies({ exercisesPlanned: 5, exercisesSucceeded: 2 })).toBe(false);
+    expect(learnSessionQualifies({ exercisesPlanned: 3, exercisesSucceeded: 2 })).toBe(true);
+    expect(learnSessionQualifies({ exercisesPlanned: 3, exercisesSucceeded: 1 })).toBe(false);
+    expect(learnSessionQualifies({ exercisesPlanned: 12, exercisesSucceeded: 6 })).toBe(true);
+    expect(learnSessionQualifies({ exercisesPlanned: 12, exercisesSucceeded: 5 })).toBe(false);
+  });
+
+  it("still counts a session from before success was tracked, so no one loses progress", () => {
+    expect(learnSessionQualifies({ exercisesPlanned: 5 })).toBe(true);
+  });
+
+  it("counts a topic after any one qualifying session", () => {
+    expect(hasLearned([{ exercisesPlanned: 5, exercisesSucceeded: 0 }, { exercisesPlanned: 5, exercisesSucceeded: 4 }])).toBe(true);
+  });
+
+  it("doesn't hold someone on a topic for good: two finished rounds count regardless", () => {
+    const missed = { exercisesPlanned: 5, exercisesSucceeded: 0 };
+    expect(hasLearned([])).toBe(false);
+    expect(hasLearned([missed])).toBe(false);
+    expect(hasLearned([missed, missed])).toBe(true);
   });
 });

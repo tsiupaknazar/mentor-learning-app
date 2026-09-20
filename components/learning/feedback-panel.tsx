@@ -32,14 +32,18 @@ export function FeedbackPanel({
   evaluation,
   exerciseId,
   onRevisitLesson,
+  compactScores = false,
 }: {
   evaluation: Evaluation;
   /** Needed to answer `mentorFollowUp` — omit to render the question as read-only (no reply box). */
   exerciseId?: Id<"exercises">;
   /** Offered when the review traced the mistake to a lesson section; omit if there's no lesson to go back to. */
   onRevisitLesson?: (heading: string) => void;
+  /** Tuck the five score bars behind a toggle - for beginners, who need the message, not the rubric. */
+  compactScores?: boolean;
 }) {
   const { t } = useLocale();
+  const [showScores, setShowScores] = useState(false);
   const meta = RESULT_ICON[evaluation.result];
   const Icon = meta.icon;
 
@@ -84,20 +88,34 @@ export function FeedbackPanel({
         )}
 
         <div className="border-t border-border pt-4">
-          <p className="mb-2 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
-            {t.feedback.scoreBreakdown}
-          </p>
-          <div className="space-y-2">
-            {SCORE_KEYS.map((key) => (
-              <div key={key} className="flex items-center gap-3">
-                <span className="w-28 shrink-0 text-xs text-muted-foreground">{t.feedback.scoreLabels[key]}</span>
-                <Progress value={evaluation.scores[key]} className="h-1.5 flex-1" />
-                <span className="w-9 shrink-0 text-right font-mono-tabular text-xs text-muted-foreground">
-                  {evaluation.scores[key]}
-                </span>
+          {compactScores && (
+            <button
+              type="button"
+              aria-expanded={showScores}
+              onClick={() => setShowScores((v) => !v)}
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              {showScores ? t.feedback.hideScores : t.feedback.showScores}
+            </button>
+          )}
+          {(!compactScores || showScores) && (
+            <>
+              <p className="mb-2 font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
+                {t.feedback.scoreBreakdown}
+              </p>
+              <div className="space-y-2">
+                {SCORE_KEYS.map((key) => (
+                  <div key={key} className="flex items-center gap-3">
+                    <span className="w-28 shrink-0 text-xs text-muted-foreground">{t.feedback.scoreLabels[key]}</span>
+                    <Progress value={evaluation.scores[key]} className="h-1.5 flex-1" />
+                    <span className="w-9 shrink-0 text-right font-mono-tabular text-xs text-muted-foreground">
+                      {evaluation.scores[key]}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>

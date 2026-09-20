@@ -58,6 +58,7 @@ export const saveGeneratedExercise = mutation({
       )
     ),
     referenceSolution: v.string(),
+    previewMarkup: v.optional(v.string()),
     // The locale it was actually generated in — see schema.ts's
     // exercises.contentLocale comment. Optional so callers that predate
     // this field (none currently, but keeps the mutation backward
@@ -121,6 +122,17 @@ export const listPracticeProblems = query({
         createdAt: e.createdAt,
         status: statusByExercise.get(e._id) ?? "unsolved",
       }));
+  },
+});
+
+/** Records that the learner has been shown the solution to this exercise. Keeps the first time. */
+export const markSolutionRevealed = mutation({
+  args: { exerciseId: v.id("exercises") },
+  handler: async (ctx, args) => {
+    const exercise = await ctx.db.get(args.exerciseId);
+    if (exercise && exercise.solutionRevealedAt === undefined) {
+      await ctx.db.patch(args.exerciseId, { solutionRevealedAt: Date.now() });
+    }
   },
 });
 

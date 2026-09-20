@@ -246,6 +246,55 @@ async function htmlCssPath(level: "beginner" | "junior") {
   return { t, userId, active, topic, finishSession, setStatus };
 }
 
+describe("finishing a Learn session opens the next topic only if it went reasonably", () => {
+  const finishWith = async (
+    h: Awaited<ReturnType<typeof htmlCssPath>>,
+    externalId: string,
+    succeeded: number | undefined
+  ) => {
+    const topicId = (await h.topic(externalId))._id;
+    await h.t.run((ctx) =>
+      ctx.db.insert("sessions", {
+        userId: h.userId,
+        topicId,
+        objective: "o",
+        startedAt: Date.now() - 1000,
+        completedAt: Date.now(),
+        exercisesPlanned: 5,
+        exercisesCompleted: 5,
+        mode: "learn",
+        exercisesSucceeded: succeeded,
+      })
+    );
+  };
+  const selectorsLocked = async (h: Awaited<ReturnType<typeof htmlCssPath>>) => (await h.topic("selectors")).locked;
+
+  it("keeps a beginner on a topic whose session went badly, and opens the next after a decent one", async () => {
+    const h = await htmlCssPath("beginner");
+
+    await finishWith(h, "html", 1);
+    expect(await selectorsLocked(h)).toBe(true);
+    expect((await h.topic("html")).passed).toBe(false);
+
+    await finishWith(h, "html", 3);
+    expect(await selectorsLocked(h)).toBe(false);
+    expect((await h.topic("html")).passed).toBe(true);
+  });
+
+  it("opens it after a second finished round even if both went badly", async () => {
+    const h = await htmlCssPath("beginner");
+    await finishWith(h, "html", 0);
+    await finishWith(h, "html", 1);
+    expect(await selectorsLocked(h)).toBe(false);
+  });
+
+  it("still opens it after a session from before success was tracked", async () => {
+    const h = await htmlCssPath("beginner");
+    await finishWith(h, "html", undefined);
+    expect(await selectorsLocked(h)).toBe(false);
+  });
+});
+
 describe("a beginner follows the path in order", () => {
   it("opens only the first topic - the AI gave Flexbox no prerequisites, but it is still ahead of the learner", async () => {
     const { active } = await htmlCssPath("beginner");

@@ -5,16 +5,18 @@ import Link from "next/link";
 import { Lightbulb, Loader2 } from "lucide-react";
 
 import type { Id } from "@/convex/_generated/dataModel";
-import type { AttemptReward, ClientExercise, ExerciseType } from "@/types/domain";
+import type { AttemptReward, ClientExercise, ExerciseType, SkillLevel } from "@/types/domain";
 import type { Evaluation, Hint, TranslatedExercise } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { CodeEditor } from "@/components/learning/code-editor";
+import { ExerciseEditor } from "@/components/learning/exercise-editor";
 import { ReadOnlyCode } from "@/components/learning/read-only-code";
 import { FeedbackPanel, RewardStrip } from "@/components/learning/feedback-panel";
 import { ChoiceList } from "@/components/learning/choice-list";
+import { SolutionPanel, SolutionReveal } from "@/components/learning/solution-reveal";
+import { collectTestResults } from "@/lib/js-tests";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useBatchContentTranslation } from "@/lib/i18n/use-content-translation";
 import { useDraft } from "@/lib/drafts";
@@ -50,9 +52,11 @@ interface ProblemDraft {
 export function ProblemSolver({
   exerciseId,
   exercise,
+  level,
 }: {
   exerciseId: Id<"exercises">;
   exercise: ClientExercise;
+  level?: SkillLevel;
 }) {
   const { ready, draft, save, clear } = useDraft<ProblemDraft>(`exercise:${exerciseId}`);
 
@@ -60,18 +64,20 @@ export function ProblemSolver({
   // draft has been read instead of mounting empty and losing it.
   if (!ready) return <div className="min-h-[60vh]" aria-busy="true" />;
 
-  return <ProblemSolverBody exerciseId={exerciseId} exercise={exercise} initial={draft} save={save} clear={clear} />;
+  return <ProblemSolverBody exerciseId={exerciseId} exercise={exercise} level={level} initial={draft} save={save} clear={clear} />;
 }
 
 function ProblemSolverBody({
   exerciseId,
   exercise,
+  level,
   initial,
   save,
   clear,
 }: {
   exerciseId: Id<"exercises">;
   exercise: ClientExercise;
+  level?: SkillLevel;
   initial: ProblemDraft | null;
   save: (draft: ProblemDraft) => void;
   clear: () => void;
@@ -92,6 +98,7 @@ function ProblemSolverBody({
   const [hintsUsed, setHintsUsed] = useState(initial?.hints.length ?? 0);
   const [visibleHints, setVisibleHints] = useState<Hint[]>(initial?.hints ?? []);
   const [solutionRevealed, setSolutionRevealed] = useState(initial?.solutionRevealed ?? false);
+  const [solution, setSolution] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
   const [reward, setReward] = useState<AttemptReward | null>(null);
@@ -144,9 +151,11 @@ function ProblemSolverBody({
     setSubmitting(true);
     setError(null);
     try {
+      const testResults = isCodeAnswer ? await collectTestResults(exercise, answer) : null;
       const data = await apiFetch<{ evaluation: Evaluation; reward?: AttemptReward }>("/api/evaluate", {
         exerciseId,
         submittedAnswer: answer,
+        testResults: testResults ?? undefined,
         hintsUsed,
         solutionRevealed,
         sessionId: null,
@@ -194,16 +203,20 @@ function ProblemSolverBody({
 
       {!evaluation && (
         <div className="space-y-6" onKeyDownCapture={submitOnModEnter}>
+          {solution !== null && <SolutionPanel solution={solution} asCode={isCodeAnswer} language={exercise.language} />}
+
           {isMultipleChoice ? (
             <ChoiceList choices={choices!} value={answer} onChange={setAnswer} label={title} />
           ) : isCodeAnswer ? (
-            <CodeEditor
+            <ExerciseEditor
               starterCode={exercise.starterCode ?? "// Write your solution here\n"}
               // Non-empty only when returning via "Revise and resubmit" — the
               // editor unmounts during feedback and would otherwise reset.
               initialCode={answer || undefined}
               onChange={setAnswer}
               language={exercise.language}
+              previewMarkup={exercise.previewMarkup}
+              testCases={exercise.testCases}
             />
           ) : (
             <Textarea
@@ -249,6 +262,9 @@ function ProblemSolverBody({
             )}
             {solutionRevealed && <p className="text-xs text-muted-foreground">{t.session.solutionMarked}</p>}
           </div>
+          {hintsUsed >= HINT_LEVELS.length && solution === null && (
+            <p className="text-xs text-muted-foreground">{t.session.stuckNote}</p>
+          )}
           {hintError && <p role="alert" className="text-sm text-destructive">{hintError}</p>}
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         </div>
@@ -256,8 +272,18 @@ function ProblemSolverBody({
 
       {evaluation && (
         <div className="space-y-4">
-          <FeedbackPanel evaluation={evaluation} exerciseId={exerciseId} />
+          <FeedbackPanel evaluation={evaluation} exerciseId={exerciseId} compactScores={level === "beginner"} />
           {reward && <RewardStrip reward={reward} />}
+          {solution !== null && <SolutionPanel solution={solution} asCode={isCodeAnswer} language={exercise.language} />}
+          {evaluation.result !== "correct" && solution === null && (
+            <SolutionReveal
+              exerciseId={exerciseId}
+              onLoaded={(s) => {
+                setSolution(s);
+                setSolutionRevealed(true);
+              }}
+            />
+          )}
           <div className="flex flex-wrap gap-3">
             {evaluation.result !== "correct" && (
               <Button variant="outline" onClick={() => setEvaluation(null)}>

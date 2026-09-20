@@ -91,6 +91,8 @@ export interface ClientExercise {
   starterCode: string | null;
   choices: string[] | null;
   testCases: Array<{ input: string; expectedOutput: string; description: string | null }> | null;
+  /** CSS exercises: the markup the learner's CSS is previewed against. */
+  previewMarkup?: string | null;
   // The locale this exercise's title/subtopic/prompt/choices were
   // actually generated in — see convex/schema.ts's exercises.contentLocale
   // comment. Undefined for exercises created before this field existed.

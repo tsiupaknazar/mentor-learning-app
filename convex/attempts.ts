@@ -51,18 +51,36 @@ export const recordAttempt = mutation({
     contentLocale: v.optional(v.union(v.literal("en"), v.literal("uk"))),
   },
   handler: async (ctx, args) => {
+    // Having been shown the solution is remembered on the exercise, so it
+    // counts even if the client reports otherwise (or forgets, after a reload).
+    const exercise = await ctx.db.get(args.exerciseId);
+    const solutionRevealed = args.solutionRevealed || exercise?.solutionRevealedAt !== undefined;
+
     const attemptId = await ctx.db.insert("attempts", {
       userId: args.userId,
       exerciseId: args.exerciseId,
       topicId: args.topicId,
       submittedAnswer: args.submittedAnswer,
       hintsUsed: args.hintsUsed,
-      solutionRevealed: args.solutionRevealed,
+      solutionRevealed,
       result: args.result,
       scores: args.scores,
       feedback: args.feedback,
       submittedAt: Date.now(),
     });
+
+    // --- Session outcome: each exercise counts once, when it first succeeds ---
+    if (args.result !== "incorrect" && exercise?.sessionId) {
+      const attemptsOnExercise = await ctx.db
+        .query("attempts")
+        .withIndex("by_exercise", (q) => q.eq("exerciseId", args.exerciseId))
+        .collect();
+      const alreadyCounted = attemptsOnExercise.some((a) => a._id !== attemptId && a.result !== "incorrect");
+      const session = alreadyCounted ? null : await ctx.db.get(exercise.sessionId);
+      if (session) {
+        await ctx.db.patch(session._id, { exercisesSucceeded: (session.exercisesSucceeded ?? 0) + 1 });
+      }
+    }
 
     // --- Deterministic mastery update -------------------------------
     const progress = await ctx.db
@@ -149,7 +167,7 @@ export const recordAttempt = mutation({
     const user = await ctx.db.get(args.userId);
     if (user) {
       let xp = 0;
-      const wasCleanCorrect = args.result === "correct" && args.hintsUsed === 0 && !args.solutionRevealed;
+      const wasCleanCorrect = args.result === "correct" && args.hintsUsed === 0 && !solutionRevealed;
       if (args.result === "correct") {
         xp += wasCleanCorrect ? 100 : 40;
       } else if (args.result === "partially_correct") {
@@ -217,6 +235,18 @@ export const activityByDay = query({
       byDate.set(date, day);
     }
     return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, v]) => ({ date, ...v }));
+  },
+});
+
+/** Every attempt on one exercise, newest first. */
+export const listAttemptsForExercise = query({
+  args: { exerciseId: v.id("exercises") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("attempts")
+      .withIndex("by_exercise", (q) => q.eq("exerciseId", args.exerciseId))
+      .order("desc")
+      .collect();
   },
 });
 
