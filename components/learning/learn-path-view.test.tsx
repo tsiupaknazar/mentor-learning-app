@@ -144,7 +144,7 @@ describe("LearnPathView", () => {
     expect(screen.queryByText("Up next")).not.toBeInTheDocument();
   });
 
-  it("shows overall progress as mastered topics out of all topics", () => {
+  it("shows overall progress as completed topics out of all topics", () => {
     const mastered = { mastery: { overall: 90 }, status: "mastered" as const, attemptsCount: 4 };
     render(
       <LearnPathView
@@ -160,12 +160,90 @@ describe("LearnPathView", () => {
       />
     );
 
-    expect(screen.getByText("2 of 4 topics mastered")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar", { name: "2 of 4 topics mastered" })).toBeInTheDocument();
+    expect(screen.getByText("2 of 4 topics completed")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "2 of 4 topics completed" })).toBeInTheDocument();
   });
 
   it("shows no progress line for an empty path", () => {
     render(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[]} />);
-    expect(screen.queryByText(/topics mastered/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/topics completed/)).not.toBeInTheDocument();
+  });
+
+  describe("the path's own order", () => {
+    const html = topic({ _id: "html", externalId: "html", title: "HTML structure and semantics", orderIndex: 0 });
+    const selectors = topic({
+      _id: "sel",
+      externalId: "selectors",
+      title: "CSS selectors",
+      orderIndex: 1,
+      locked: true,
+      block: "order",
+      blockedBy: ["html"],
+    });
+    const flexbox = topic({
+      _id: "flex",
+      externalId: "flexbox",
+      title: "Flexbox",
+      orderIndex: 2,
+      locked: true,
+      block: "order",
+      blockedBy: ["html"],
+    });
+
+    it("tells a topic that's ahead what to finish first, and links straight to it", () => {
+      render(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[html, selectors, flexbox]} />);
+
+      const notes = screen.getAllByText(/Finish first:/);
+      expect(notes).toHaveLength(2); // Selectors and Flexbox
+      expect(screen.queryByText(/Requires:/)).not.toBeInTheDocument();
+      // Both point at the ONE topic to do next, HTML - and it's a link, since HTML is open.
+      const links = screen.getAllByRole("link", { name: "HTML structure and semantics" });
+      expect(links.some((a) => a.getAttribute("href") === "/learn/html")).toBe(true);
+    });
+
+    it("uses 'Requires' for a prerequisite the AI named, and 'Finish first' for path order", () => {
+      const prereq = topic({
+        _id: "adv",
+        externalId: "adv",
+        title: "Advanced",
+        orderIndex: 3,
+        locked: true,
+        block: "prerequisites",
+        blockedBy: ["html"],
+      });
+      render(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[html, selectors, prereq]} />);
+      expect(screen.getAllByText(/Finish first:/)).toHaveLength(1);
+      expect(screen.getAllByText(/Requires:/)).toHaveLength(1);
+    });
+
+    it("explains the ordering to a learner on a strict path, and only to them", () => {
+      const { rerender } = render(
+        <LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[html, selectors]} strictOrder />
+      );
+      expect(screen.getByText(/opens one topic at a time, in order/)).toBeInTheDocument();
+
+      rerender(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[html, selectors]} />);
+      expect(screen.queryByText(/opens one topic at a time/)).not.toBeInTheDocument();
+    });
+
+    it("counts a topic learned but not yet mastered as completed", () => {
+      render(
+        <LearnPathView
+          learningPathId="path1"
+          contentLocale="en"
+          path={PATH}
+          topics={[{ ...html, passed: true }, { ...selectors, locked: false, block: null, blockedBy: [], passed: false }]}
+        />
+      );
+      expect(screen.getByText("1 of 2 topics completed")).toBeInTheDocument();
+    });
+
+    it("leaves free-form practice topics out of the path, and out of the count", () => {
+      const custom = topic({ _id: "custom", externalId: "css-grid", title: "CSS Grid layouts", orderIndex: 9, adHoc: true });
+      render(<LearnPathView learningPathId="path1" contentLocale="en" path={PATH} topics={[html, custom]} />);
+
+      expect(screen.queryByText("CSS Grid layouts")).not.toBeInTheDocument();
+      expect(screen.getByText("0 of 1 topics completed")).toBeInTheDocument();
+    });
   });
 });

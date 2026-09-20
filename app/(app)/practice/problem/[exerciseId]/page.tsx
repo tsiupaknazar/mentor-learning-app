@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ClientExercise } from "@/types/domain";
 import { ProblemSolver } from "@/components/learning/problem-solver";
+import { LockedTopicNotice } from "@/components/learning/locked-topic-notice";
+import { getDictionary } from "@/lib/i18n/dictionaries";
 
 export default async function PracticeProblemPage({
   params,
@@ -19,6 +21,23 @@ export default async function PracticeProblemPage({
   });
 
   if (!exerciseRow || exerciseRow.userId !== user._id) notFound();
+
+  // A problem generated for a topic the learner hasn't reached (an old one, or
+  // a bookmarked link) can't be solved: grading it would record progress on
+  // material that's still ahead of them.
+  const topicData = await convexQuery(api.learningPaths.getTopic, { topicId: exerciseRow.topicId });
+  if (topicData?.locked) {
+    const t = getDictionary(user.locale ?? "en");
+    return (
+      <LockedTopicNotice
+        topicTitle={topicData.topic.title}
+        blockedBy={topicData.blockedBy}
+        backHref="/practice"
+        backLabel={t.practice.backToBoard}
+        note={t.learn.lockedNoticePractice}
+      />
+    );
+  }
 
   // Strip the answer key server-side — the client only ever sees a
   // ClientExercise, same contract as the generate-on-demand flow.

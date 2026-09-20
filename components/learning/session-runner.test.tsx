@@ -684,4 +684,23 @@ describe("SessionRunner", () => {
       expect(conceptFetches()).toBe(0);
     });
   });
+
+  describe("which flow started the session", () => {
+    it("a Practice drill is recorded as practice, so it can't count as having learned the topic", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "practice" });
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+      await screen.findByLabelText("code");
+      expect(startSessionMock).toHaveBeenCalledWith(expect.objectContaining({ mode: "practice" }));
+    });
+
+    it("a lesson from the Learn page is recorded as learn", async () => {
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+      await user.click(screen.getByRole("button", { name: "Start session" }));
+      await user.click(await screen.findByRole("button", { name: "Start practicing" }));
+      await screen.findByLabelText("code");
+      expect(startSessionMock).toHaveBeenCalledWith(expect.objectContaining({ mode: "learn" }));
+    });
+  });
 });

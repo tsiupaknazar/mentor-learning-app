@@ -20,10 +20,19 @@ export type LearnTopicRow = {
   parentTopicId?: string;
   orderIndex: number;
   prerequisiteExternalIds: string[];
-  // Computed server-side (convex/learningPaths.ts getActiveLearningPath,
-  // see convex/lib/topicLocking.ts) — true until every prerequisite topic
-  // is mastered.
+  // Computed server-side (convex/learningPaths.ts getActiveLearningPath, see
+  // convex/lib/curriculum.ts) — true while an earlier topic in the path (strict
+  // order, beginners) or a prerequisite the AI named hasn't been passed yet.
   locked: boolean;
+  // Why it's locked, and which topics to finish first (topic _ids) - see
+  // convex/lib/curriculum.ts. Absent on rows from older callers, which fall back
+  // to naming the AI's prerequisites.
+  block?: "prerequisites" | "order" | null;
+  blockedBy?: string[];
+  /** Mastered, or a Learn session finished on it. */
+  passed?: boolean;
+  /** A free-form practice topic: not a step of the path, so it isn't shown here. */
+  adHoc?: boolean;
   progress: {
     mastery: { overall: number };
     status: "not_started" | "in_progress" | "needs_review" | "mastered";
@@ -39,6 +48,7 @@ interface TreeContext {
   /** Display title (translated when available) by externalId, for naming prerequisites. */
   displayTitleByExternalId: Map<string, string>;
   rowByExternalId: Map<string, LearnTopicRow>;
+  rowById: Map<string, LearnTopicRow>;
   /** The topic the dashboard would suggest next, if any. */
   nextTopicId: string | null;
 }
@@ -47,16 +57,21 @@ export function LearnPathView({
   learningPathId,
   contentLocale,
   path,
-  topics,
+  topics: allTopics,
   nextTopicId = null,
+  strictOrder = false,
 }: {
   learningPathId: string;
   contentLocale: Locale | undefined;
   path: { title: string; rationale: string };
   topics: LearnTopicRow[];
   nextTopicId?: string | null;
+  /** The learner follows the path strictly in order (beginners). */
+  strictOrder?: boolean;
 }) {
   const { t } = useLocale();
+  // Free-form practice topics aren't steps of the path.
+  const topics = allTopics.filter((tp) => !tp.adHoc);
   const translated = useContentTranslation<TranslatedLearningPath>(
     "/api/translate/learning-path",
     "learningPathId",
@@ -79,10 +94,13 @@ export function LearnPathView({
       topics.map((tp) => [tp.externalId, translatedByExternalId.get(tp.externalId)?.title ?? tp.title])
     ),
     rowByExternalId: new Map(topics.map((tp) => [tp.externalId, tp])),
+    rowById: new Map(topics.map((tp) => [tp._id, tp])),
     nextTopicId,
   };
 
-  const masteredCount = topics.filter((tp) => tp.progress?.status === "mastered").length;
+  // "Completed" = passed (mastered, or a Learn session finished); rows from
+  // callers that don't say fall back to mastered.
+  const completedCount = topics.filter((tp) => tp.passed ?? tp.progress?.status === "mastered").length;
 
   return (
     <div className="space-y-6">
@@ -102,13 +120,14 @@ export function LearnPathView({
       {topics.length > 0 && (
         <div className="space-y-1.5">
           <Progress
-            value={(masteredCount / topics.length) * 100}
+            value={(completedCount / topics.length) * 100}
             className="h-1.5"
-            aria-label={t.learn.topicsMastered(masteredCount, topics.length)}
+            aria-label={t.learn.topicsCompleted(completedCount, topics.length)}
           />
           <p className="font-mono-tabular text-xs text-muted-foreground">
-            {t.learn.topicsMastered(masteredCount, topics.length)}
+            {t.learn.topicsCompleted(completedCount, topics.length)}
           </p>
+          {strictOrder && <p className="pt-1 text-xs text-muted-foreground">{t.learn.strictOrderNote}</p>}
         </div>
       )}
 
@@ -134,13 +153,19 @@ function TopicNode({ topic, ctx }: { topic: LearnTopicRow; ctx: TreeContext }) {
 
   // A locked topic names what unlocks it - and links to each prerequisite that
   // can itself be started, so the way forward is one click, not a hunt.
-  const prerequisites = topic.locked
-    ? topic.prerequisiteExternalIds.map((id) => ({
-        id,
-        title: ctx.displayTitleByExternalId.get(id) ?? id,
-        row: ctx.rowByExternalId.get(id),
-      }))
-    : [];
+  const blockers = !topic.locked
+    ? []
+    : topic.blockedBy
+      ? topic.blockedBy.flatMap((id) => {
+          const row = ctx.rowById.get(id);
+          return row ? [{ id, title: ctx.displayTitleByExternalId.get(row.externalId) ?? row.title, row }] : [];
+        })
+      : topic.prerequisiteExternalIds.map((id) => ({
+          id,
+          title: ctx.displayTitleByExternalId.get(id) ?? id,
+          row: ctx.rowByExternalId.get(id),
+        }));
+  const blockLabel = topic.block === "order" ? t.learn.finishFirstLabel : t.learn.lockedRequiresLabel;
 
   const cardBody = (
     <Card
@@ -178,8 +203,8 @@ function TopicNode({ topic, ctx }: { topic: LearnTopicRow; ctx: TreeContext }) {
         <div aria-disabled="true">
           {cardBody}
           <p className="mt-1 pl-4 text-xs text-muted-foreground">
-            {t.learn.lockedRequiresLabel}{" "}
-            {prerequisites.map((pre, i) => (
+            {blockLabel}{" "}
+            {blockers.map((pre, i) => (
               <span key={pre.id}>
                 {i > 0 && ", "}
                 {pre.row && !pre.row.locked ? (

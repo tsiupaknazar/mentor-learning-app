@@ -5,6 +5,8 @@ import { convexQuery } from "@/lib/convex-server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { SessionRunner } from "@/components/learning/session-runner";
+import { LockedTopicNotice } from "@/components/learning/locked-topic-notice";
+import { getDictionary } from "@/lib/i18n/dictionaries";
 
 /**
  * Practice's own session page — deliberately separate from
@@ -23,6 +25,21 @@ export default async function PracticeSessionPage({
   const data = await convexQuery(api.learningPaths.getTopic, { topicId: topicId as Id<"topics"> });
 
   if (!data || data.topic.userId !== user._id) notFound();
+
+  // Practice used to skip this check, so a learner could drill topics far
+  // ahead of where they were and skew what the system thought they'd learned.
+  if (data.locked) {
+    const t = getDictionary(user.locale ?? "en");
+    return (
+      <LockedTopicNotice
+        topicTitle={data.topic.title}
+        blockedBy={data.blockedBy}
+        backHref="/practice"
+        backLabel={t.practice.backToBoard}
+        note={t.learn.lockedNoticePractice}
+      />
+    );
+  }
 
   return (
     <SessionRunner

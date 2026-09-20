@@ -345,6 +345,9 @@ export function SessionRunner({
         topicId,
         objective: `Understand ${topicTitle} and apply it correctly.`,
         exercisesPlanned: preferredLength,
+        // Only a finished "learn" session counts as having learned the topic; a
+        // practice drill must not, or drilling ahead would advance the path.
+        mode,
       });
       setSessionId(sid);
       await fetchExercise(sid);

@@ -136,4 +136,13 @@ describe("KnowledgeMapView", () => {
     renderMap([]);
     expect(screen.getByRole("heading", { name: "JS Path" })).toBeInTheDocument();
   });
+
+  it("leaves free-form practice topics off the map: it shows the path, not the sandbox", () => {
+    renderMap([
+      topic({ _id: "a", title: "HTML structure", orderIndex: 0, progress: progress() }),
+      topic({ _id: "custom", title: "CSS Grid layouts", orderIndex: 5, adHoc: true, progress: progress() }),
+    ]);
+    expect(screen.getByText("HTML structure")).toBeInTheDocument();
+    expect(screen.queryByText("CSS Grid layouts")).not.toBeInTheDocument();
+  });
 });

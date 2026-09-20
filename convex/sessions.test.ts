@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { seedUser, seedTopic } from "./test-helpers";
+import { seedUser, seedTopic } from "./test.helpers";
 
 describe("startSession / getSession", () => {
   it("creates a session with 0 exercises completed", async () => {
@@ -20,6 +20,22 @@ describe("startSession / getSession", () => {
     const session = await t.query(api.sessions.getSession, { sessionId });
     expect(session?.exercisesCompleted).toBe(0);
     expect(session?.completedAt).toBeUndefined();
+  });
+});
+
+describe("startSession mode", () => {
+  it("records which flow started the session, so only a Learn session can count as learning", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { topicId } = await seedTopic(t, userId);
+
+    const learn = await t.mutation(api.sessions.startSession, { userId, topicId, objective: "o", exercisesPlanned: 3, mode: "learn" });
+    const practice = await t.mutation(api.sessions.startSession, { userId, topicId, objective: "o", exercisesPlanned: 3, mode: "practice" });
+    const unspecified = await t.mutation(api.sessions.startSession, { userId, topicId, objective: "o", exercisesPlanned: 3 });
+
+    expect((await t.query(api.sessions.getSession, { sessionId: learn }))?.mode).toBe("learn");
+    expect((await t.query(api.sessions.getSession, { sessionId: practice }))?.mode).toBe("practice");
+    expect((await t.query(api.sessions.getSession, { sessionId: unspecified }))?.mode).toBeUndefined();
   });
 });
 

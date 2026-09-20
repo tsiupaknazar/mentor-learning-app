@@ -2,7 +2,13 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
 export const startSession = mutation({
-  args: { userId: v.id("users"), topicId: v.id("topics"), objective: v.string(), exercisesPlanned: v.number() },
+  args: {
+    userId: v.id("users"),
+    topicId: v.id("topics"),
+    objective: v.string(),
+    exercisesPlanned: v.number(),
+    mode: v.optional(v.union(v.literal("learn"), v.literal("practice"))),
+  },
   handler: async (ctx, args) => {
     return await ctx.db.insert("sessions", {
       userId: args.userId,
@@ -11,6 +17,7 @@ export const startSession = mutation({
       startedAt: Date.now(),
       exercisesPlanned: args.exercisesPlanned,
       exercisesCompleted: 0,
+      mode: args.mode,
     });
   },
 });

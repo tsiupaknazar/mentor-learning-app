@@ -35,11 +35,19 @@ export async function POST(req: Request) {
     const topicRows = await Promise.all(
       topicIds.map((topicId) => convexQuery(api.learningPaths.getTopic, { topicId }))
     );
-    const validTopics = topicRows.filter(
+    const ownedTopics = topicRows.filter(
       (t): t is NonNullable<typeof t> => t !== null && t.topic.userId === user._id
     );
-    if (validTopics.length === 0) {
+    if (ownedTopics.length === 0) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+    // Practice is for topics the learner has reached. Generating problems for
+    // one that's still ahead of them in the path is how practising used to
+    // run ahead of learning; the Practice page never offers such topics, this
+    // is the guard for anything that gets around it.
+    const validTopics = ownedTopics.filter((t) => !t.locked);
+    if (validTopics.length === 0) {
+      return NextResponse.json({ error: "topic_locked" }, { status: 403 });
     }
 
     const existing = await convexQuery(api.exercises.listPracticeProblems, {

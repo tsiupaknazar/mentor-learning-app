@@ -33,6 +33,7 @@ export default async function LearnPage() {
       contentLocale={data.path.contentLocale}
       path={{ title: data.path.title, rationale: data.path.rationale }}
       topics={data.topics as unknown as LearnTopicRow[]}
+      strictOrder={data.strictOrder}
       // Same pick as the dashboard's hero card, so both agree on "what's next".
       nextTopicId={summary?.nextAction?.topicId ?? null}
     />

@@ -30,6 +30,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
+    const topicData = await convexQuery(api.learningPaths.getTopic, { topicId: exerciseRow.topicId });
+    if (topicData?.locked) {
+      return NextResponse.json({ error: "topic_locked" }, { status: 403 });
+    }
+
     const exercise: Exercise = {
       id: exerciseRow.externalId,
       topic: exerciseRow.subtopic,

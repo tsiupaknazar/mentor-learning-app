@@ -13,6 +13,7 @@ import type { Dictionary } from "@/lib/i18n/dictionaries";
 export type ApiErrorKind =
   | "unauthenticated" // session expired / signed out
   | "onboarding_incomplete"
+  | "topic_locked" // the topic is ahead of the learner in the path
   | "rate_limited"
   | "ai_unavailable" // AI not configured (503)
   | "ai_failed" // AI request failed or returned unusable output (502)
@@ -35,6 +36,7 @@ export class ApiError extends Error {
 function classify(status: number, code: string | undefined): ApiErrorKind {
   if (status === 401 || code === "unauthenticated") return "unauthenticated";
   if (code === "onboarding_incomplete") return "onboarding_incomplete";
+  if (code === "topic_locked") return "topic_locked";
   if (status === 429) return "rate_limited";
   if (status === 503) return "ai_unavailable";
   if (status === 502) return "ai_failed";
@@ -98,6 +100,8 @@ export function apiErrorMessage(err: unknown, t: Dictionary, fallback: string): 
       return t.common.aiBusy;
     case "ai_unavailable":
       return t.common.aiUnavailable;
+    case "topic_locked":
+      return t.common.topicLocked;
     default:
       return fallback;
   }

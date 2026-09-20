@@ -181,4 +181,23 @@ describe("POST /api/evaluate", () => {
     expect(body.evaluation).toEqual(EVALUATION);
     expect(body.mastery).toEqual({ overall: 50 });
   });
+
+  it("refuses with 403 topic_locked, without grading or recording anything, for a topic the learner hasn't reached", async () => {
+    convexQueryMock.mockImplementation(async (_ref: unknown, args: Record<string, unknown>) =>
+      "exerciseId" in args ? EXERCISE_ROW : { locked: true }
+    );
+
+    const res = await POST(jsonRequest(VALID_BODY));
+
+    const { status, body } = await statusAndBody(res);
+    expect(status).toBe(403);
+    expect(body.error).toBe("topic_locked");
+    expect(generateStructuredMock).not.toHaveBeenCalled();
+    expect(convexMutationMock).not.toHaveBeenCalled(); // no attempt, XP or mastery
+  });
+
+  it("checks the lock of the exercise's own topic", async () => {
+    await POST(jsonRequest(VALID_BODY));
+    expect(convexQueryMock).toHaveBeenCalledWith(expect.anything(), { topicId: "topic1" });
+  });
 });

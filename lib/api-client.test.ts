@@ -45,6 +45,7 @@ describe("apiFetch", () => {
   it("classifies failures from the status and the route's error code", async () => {
     expect(await kindOf(json({ error: "unauthenticated" }, 401))).toBe("unauthenticated");
     expect(await kindOf(json({ error: "onboarding_incomplete" }, 403))).toBe("onboarding_incomplete");
+    expect(await kindOf(json({ error: "topic_locked" }, 403))).toBe("topic_locked");
     expect(await kindOf(json({}, 429))).toBe("rate_limited");
     expect(await kindOf(json({ error: "ai_not_configured" }, 503))).toBe("ai_unavailable");
     expect(await kindOf(json({ error: "ai_request_failed" }, 502))).toBe("ai_failed");
@@ -79,6 +80,7 @@ describe("apiErrorMessage", () => {
     expect(apiErrorMessage(new ApiError("rate_limited", 429), t, fallback)).toBe(t.common.rateLimited);
     expect(apiErrorMessage(new ApiError("ai_failed", 502), t, fallback)).toBe(t.common.aiBusy);
     expect(apiErrorMessage(new ApiError("ai_unavailable", 503), t, fallback)).toBe(t.common.aiUnavailable);
+    expect(apiErrorMessage(new ApiError("topic_locked", 403), t, fallback)).toBe(t.common.topicLocked);
   });
 
   it("falls back to the feature's own message for everything else", () => {

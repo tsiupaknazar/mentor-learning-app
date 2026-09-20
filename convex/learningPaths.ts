@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { isTopicLocked } from "./lib/topicLocking";
+import { analyzeLearningPath, isSandboxTopic } from "./lib/curriculumData";
 
 interface TopicNodeInput {
   id: string;
@@ -120,35 +120,26 @@ export const getActiveLearningPath = query({
       .first();
     if (!path) return null;
 
-    const topics = await ctx.db
-      .query("topics")
-      .withIndex("by_learning_path", (q) => q.eq("learningPathId", path._id))
-      .collect();
+    // `locked` = the learner can't start this topic yet: an earlier topic in
+    // the path isn't passed (strict order, beginners) or a prerequisite the AI
+    // named isn't. `blockedBy` says which, so the UI can name what to finish
+    // first. See convex/lib/curriculum.ts for the rules.
+    const { topics, progressByTopic, analysis, strictOrder } = await analyzeLearningPath(ctx, args.userId, path._id);
+    const topicsWithLock = topics.map((t) => {
+      const a = analysis.get(t._id)!;
+      return {
+        ...t,
+        progress: progressByTopic.get(t._id) ?? null,
+        locked: a.block !== null,
+        block: a.block,
+        blockedBy: a.blockedBy,
+        passed: a.passed,
+        // A practice sandbox topic, not a step of the path.
+        adHoc: isSandboxTopic(t),
+      };
+    });
 
-    const progressByTopic = await Promise.all(
-      topics.map((t) =>
-        ctx.db
-          .query("topicProgress")
-          .withIndex("by_user_and_topic", (q) => q.eq("userId", args.userId).eq("topicId", t._id))
-          .unique()
-      )
-    );
-
-    const topicsWithProgress = topics.map((t, i) => ({
-      ...t,
-      progress: progressByTopic[i] ?? null,
-    }));
-
-    // Locked = not yet unlocked for the learner to start, based on
-    // whether its prerequisite topics (by externalId, within this same
-    // path) are mastered yet. See convex/lib/topicLocking.ts.
-    const statusByExternalId = new Map(topicsWithProgress.map((t) => [t.externalId, t.progress?.status]));
-    const topicsWithLock = topicsWithProgress.map((t) => ({
-      ...t,
-      locked: isTopicLocked(t.prerequisiteExternalIds, statusByExternalId),
-    }));
-
-    return { path, topics: topicsWithLock };
+    return { path, topics: topicsWithLock, strictOrder };
   },
 });
 
@@ -187,33 +178,22 @@ export const getTopic = query({
     // Falls back to the path's own subject for root topics (no parent).
     const parentTopic = topic.parentTopicId ? await ctx.db.get(topic.parentTopicId) : null;
 
-    // Same prerequisite check as getActiveLearningPath's list view, so a
-    // learner can't bypass the lock by navigating straight to the URL of a
-    // topic they haven't unlocked yet.
-    let locked = false;
-    if (topic.prerequisiteExternalIds.length > 0) {
-      const siblingTopics = await ctx.db
-        .query("topics")
-        .withIndex("by_learning_path", (q) => q.eq("learningPathId", topic.learningPathId))
-        .collect();
-      const siblingProgress = await Promise.all(
-        siblingTopics.map((t) =>
-          ctx.db
-            .query("topicProgress")
-            .withIndex("by_user_and_topic", (q) => q.eq("userId", topic.userId).eq("topicId", t._id))
-            .unique()
-        )
-      );
-      const statusByExternalId = new Map(siblingTopics.map((t, i) => [t.externalId, siblingProgress[i]?.status]));
-      locked = isTopicLocked(topic.prerequisiteExternalIds, statusByExternalId);
-    }
+    // The same analysis as getActiveLearningPath's list view, so a learner
+    // can't get around a lock by going straight to a topic's URL (or to the
+    // Practice page, which used to skip the check entirely).
+    const { topics: pathTopics, analysis } = await analyzeLearningPath(ctx, topic.userId, topic.learningPathId);
+    const a = analysis.get(topic._id);
+    const titleById = new Map(pathTopics.map((t) => [t._id as string, t.title]));
 
     return {
       topic,
       progress,
       pathTopic: learningPath?.topic ?? null,
       parentTopic: parentTopic ? { title: parentTopic.title } : null,
-      locked,
+      locked: a?.block != null,
+      block: a?.block ?? null,
+      // What to finish first, for the "locked" screen to name and link to.
+      blockedBy: (a?.blockedBy ?? []).map((id) => ({ _id: id, title: titleById.get(id) ?? "" })),
     };
   },
 });
@@ -229,16 +209,17 @@ function slugify(title: string): string {
 }
 
 /**
- * Powers the Practice page: finds or creates a topic by title under the
- * user's active learning path, without requiring the user to navigate the
- * structured tree first. This is what makes "Practice" genuinely different
- * from "Learn" — Learn browses the AI-generated curriculum tree in order;
- * Practice lets you jump straight into any topic/language you want to
- * drill (including ones the structured path hasn't reached yet, or a
- * custom one like "CSS Flexbox layouts") and reuses the exact same session
- * flow once the topic exists. Idempotent by (learning path, slug) so
- * repeated practice on the same topic reuses one row and its mastery
- * history, rather than fragmenting progress across duplicates.
+ * Powers "add a practice topic" on the Practice page: finds a topic by title
+ * under the active path, or creates a free-form one to drill in.
+ *
+ * A title that matches an existing topic of the path returns THAT topic, and
+ * the usual rules apply to it - if the learner hasn't reached it yet, it stays
+ * blocked (practising ahead of the path used to leak into "what's next").
+ * Anything else becomes an ad-hoc topic: a sandbox flagged `adHoc`, which is
+ * kept out of the curriculum (never ordered, blocked or recommended, and not
+ * counted in path progress) so drilling "CSS Flexbox layouts" on the side can't
+ * distort the path. Idempotent by (learning path, slug), so repeated practice
+ * reuses one row and its mastery history.
  */
 export const findOrCreateAdHocTopic = mutation({
   args: { userId: v.id("users"), title: v.string() },
@@ -276,6 +257,8 @@ export const findOrCreateAdHocTopic = mutation({
       summary: `Practice topic: ${args.title}`,
       prerequisiteExternalIds: [],
       orderIndex: siblingCount,
+      // A sandbox for free practice - not a step of the learning path.
+      adHoc: true,
     });
     await ctx.db.insert("topicProgress", {
       userId: args.userId,

@@ -144,6 +144,12 @@ export default defineSchema({
     summary: v.string(),
     prerequisiteExternalIds: v.array(v.string()),
     orderIndex: v.number(),
+    // A free-form practice topic the learner added themselves ("CSS Flexbox
+    // layouts" on the Practice board). It lives outside the curriculum: never
+    // ordered, blocked or recommended, and not counted in path progress. Rows
+    // created before this flag existed are recognised by their summary - see
+    // convex/lib/curriculum.ts isAdHocTopic.
+    adHoc: v.optional(v.boolean()),
   })
     .index("by_learning_path", ["learningPathId"])
     .index("by_user_and_external_id", ["userId", "externalId"]),
@@ -179,6 +185,11 @@ export default defineSchema({
     completedAt: v.optional(v.number()),
     exercisesPlanned: v.number(),
     exercisesCompleted: v.number(),
+    // Which flow started it. Only a completed "learn" session counts as
+    // having learned the topic - a Practice drill must not (see
+    // convex/lib/curriculum.ts). Sessions from before this field existed have
+    // none, and are treated as "learn" so nobody's progress is taken away.
+    mode: v.optional(v.union(v.literal("learn"), v.literal("practice"))),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_completed", ["userId", "completedAt"]),

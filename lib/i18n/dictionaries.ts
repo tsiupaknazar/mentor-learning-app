@@ -13,6 +13,7 @@ export interface Dictionary {
     back: string;
     stillWorking: string;
     sessionExpired: string;
+    topicLocked: string;
     offline: string;
     aiBusy: string;
     aiUnavailable: string;
@@ -124,6 +125,8 @@ export interface Dictionary {
     needsReview: string;
     viewAll: string;
     reviewButton: string;
+    pathCompleteTitle: string;
+    pathCompleteBody: string;
     moreReviewsDue: (count: number) => string;
   };
   learn: {
@@ -138,6 +141,11 @@ export interface Dictionary {
     lockedNoticeTitle: string;
     lockedNoticeBody: string;
     backToPath: string;
+    finishFirstLabel: string;
+    topicsCompleted: (done: number, total: number) => string;
+    strictOrderNote: string;
+    lockedNoticeGoTo: (title: string) => string;
+    lockedNoticePractice: string;
   };
   newPath: {
     eyebrow: string;
@@ -171,6 +179,8 @@ export interface Dictionary {
     couldNotLoadTopics: string;
     noActivePath: string;
     backToBoard: string;
+    topicNotReached: string;
+    hiddenLocked: (count: number) => string;
   };
   session: {
     sessionLabel: string;
@@ -428,6 +438,7 @@ const en: Dictionary = {
     back: "Back",
     stillWorking: "Still working \u2014 this can take a moment.",
     sessionExpired: "Your session has expired. Reload the page to sign in again.",
+    topicLocked: "That topic isn\u2019t open yet. Finish the topics before it first.",
     offline: "Can\u2019t reach the server. Check your connection and try again.",
     aiBusy: "The AI service is having trouble right now. Try again in a moment.",
     aiUnavailable: "This feature is temporarily unavailable. Please try again later.",
@@ -585,6 +596,8 @@ const en: Dictionary = {
     needsReview: "Needs review",
     viewAll: "View all",
     reviewButton: "Start review",
+    pathCompleteTitle: "You\u2019ve completed this learning path",
+    pathCompleteBody: "Every topic is done. Pick what to learn next, or keep sharpening in Practice.",
     moreReviewsDue: (count) => (count === 1 ? "1 more topic is due for review" : `${count} more topics are due for review`),
   },
   learn: {
@@ -597,8 +610,13 @@ const en: Dictionary = {
     upNext: "Up next",
     topicsMastered: (mastered, total) => `${mastered} of ${total} topics mastered`,
     lockedNoticeTitle: "This topic is locked",
-    lockedNoticeBody: "You need to master its prerequisite topics before starting this one.",
+    lockedNoticeBody: "Finish the topics before it first, and it will open.",
     backToPath: "Back to learning path",
+    finishFirstLabel: "Finish first:",
+    topicsCompleted: (done, total) => `${done} of ${total} topics completed`,
+    strictOrderNote: "Your path opens one topic at a time, in order. Finish each to unlock the next.",
+    lockedNoticeGoTo: (title) => `Go to ${title}`,
+    lockedNoticePractice: "Practice opens for a topic once you\u2019ve reached it in your learning path.",
   },
   newPath: {
     eyebrow: "New learning path",
@@ -633,6 +651,8 @@ const en: Dictionary = {
     couldNotLoadTopics: "Could not load your topics.",
     noActivePath: "Complete onboarding to generate a learning path, then problems will appear here.",
     backToBoard: "Back to practice board",
+    topicNotReached: "That topic is part of your learning path and you haven\u2019t reached it yet. Learn it in order first.",
+    hiddenLocked: (count) => (count === 1 ? "1 problem is hidden until you reach its topic" : `${count} problems are hidden until you reach their topics`),
   },
   session: {
     sessionLabel: "Session",
@@ -925,6 +945,7 @@ const uk: Dictionary = {
     back: "Назад",
     stillWorking: "Ще працюємо \u2014 це може зайняти трохи часу.",
     sessionExpired: "Сесія завершилася. Перезавантажте сторінку, щоб увійти знову.",
+    topicLocked: "Ця тема ще не відкрита. Спочатку завершіть попередні теми.",
     offline: "Не вдається зв\u2019язатися із сервером. Перевірте з\u2019єднання й спробуйте ще раз.",
     aiBusy: "Сервіс ШІ зараз має проблеми. Спробуйте за хвилину.",
     aiUnavailable: "Ця функція тимчасово недоступна. Спробуйте пізніше.",
@@ -1091,6 +1112,8 @@ const uk: Dictionary = {
     needsReview: "Потребує повторення",
     viewAll: "Переглянути всі",
     reviewButton: "Почати повторення",
+    pathCompleteTitle: "Ви пройшли цей навчальний шлях",
+    pathCompleteBody: "Усі теми завершено. Оберіть, що вивчати далі, або продовжуйте вдосконалюватися в практиці.",
     moreReviewsDue: (count) => `Ще тем для повторення: ${count}`,
   },
   learn: {
@@ -1103,8 +1126,13 @@ const uk: Dictionary = {
     upNext: "Далі",
     topicsMastered: (mastered, total) => `Опановано тем: ${mastered} з ${total}`,
     lockedNoticeTitle: "Ця тема заблокована",
-    lockedNoticeBody: "Спочатку потрібно опанувати попередні теми, перш ніж почати цю.",
+    lockedNoticeBody: "Спочатку завершіть попередні теми — тоді вона відкриється.",
     backToPath: "Назад до навчального шляху",
+    finishFirstLabel: "Спочатку завершіть:",
+    topicsCompleted: (done, total) => `Завершено тем: ${done} з ${total}`,
+    strictOrderNote: "Ваш шлях відкривається тема за темою, по порядку. Завершіть кожну, щоб відкрити наступну.",
+    lockedNoticeGoTo: (title) => `Перейти до «${title}»`,
+    lockedNoticePractice: "Практика відкривається для теми, коли ви дійдете до неї в навчальному шляху.",
   },
   newPath: {
     eyebrow: "Новий навчальний шлях",
@@ -1139,6 +1167,8 @@ const uk: Dictionary = {
     couldNotLoadTopics: "Не вдалося завантажити ваші теми.",
     noActivePath: "Завершіть онбординг, щоб створити навчальний шлях — тоді тут з\u2019являться задачі.",
     backToBoard: "До дошки задач",
+    topicNotReached: "Ця тема — частина вашого навчального шляху, і ви ще не дійшли до неї. Спочатку вивчіть її по порядку.",
+    hiddenLocked: (count) => `Задач, прихованих до відкриття їхніх тем: ${count}`,
   },
   session: {
     sessionLabel: "Сесія",

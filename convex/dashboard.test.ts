@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { seedUser } from "./test-helpers";
+import { seedUser } from "./test.helpers";
 
 /**
  * Seeds a topic (+ progress) under the given learning path, creating a new
@@ -56,6 +56,27 @@ async function seedPathWithTopic(
     });
     return { learningPathId, topicId };
   });
+}
+
+/** A finished session on a topic - what "having learned it" means (only a Learn session counts). */
+async function seedFinishedSession(
+  t: ReturnType<typeof convexTest>,
+  userId: string,
+  topicId: string,
+  mode: "learn" | "practice" | undefined = "learn"
+) {
+  await t.run((ctx) =>
+    ctx.db.insert("sessions", {
+      userId: userId as never,
+      topicId: topicId as never,
+      objective: "o",
+      startedAt: Date.now() - 60_000,
+      completedAt: Date.now(),
+      exercisesPlanned: 5,
+      exercisesCompleted: 5,
+      mode,
+    })
+  );
 }
 
 describe("getLearnerContext", () => {
@@ -136,7 +157,7 @@ describe("getLearnerContext", () => {
 });
 
 describe("getDashboardSummary", () => {
-  it("prioritizes a due review over an in-progress topic", async () => {
+  it("prioritizes a due review of a topic the learner has learned over the next step", async () => {
     const t = convexTest(schema);
     const userId = await seedUser(t);
     const { learningPathId } = await seedPathWithTopic(
@@ -145,13 +166,14 @@ describe("getDashboardSummary", () => {
       { externalId: "in-progress", title: "In Progress Topic" },
       { status: "in_progress" }
     );
-    await seedPathWithTopic(
+    const due = await seedPathWithTopic(
       t,
       userId,
       { externalId: "due-review", title: "Due Review Topic" },
       { status: "needs_review", nextReviewDue: Date.now() - 1000 },
       learningPathId
     );
+    await seedFinishedSession(t, userId, due.topicId); // learned, so it can come up for review
 
     const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
     expect(summary?.nextAction?.kind).toBe("review");
@@ -232,7 +254,28 @@ describe("getDashboardSummary next action: path scoping, locks and order", () =>
     expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Fresh Topic" });
   });
 
-  it("never suggests starting a locked topic", async () => {
+  it("starts the first step, not a later topic that names it as a prerequisite", async () => {
+    const t = convexTest(schema);
+    const userId = await seedUser(t);
+    const { learningPathId } = await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "basics", title: "Basics", orderIndex: 0 },
+      FRESH
+    );
+    await seedPathWithTopic(
+      t,
+      userId,
+      { externalId: "advanced", title: "Advanced", prerequisiteExternalIds: ["basics"], orderIndex: 1 },
+      FRESH,
+      learningPathId
+    );
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Basics" });
+  });
+
+  it("ignores a prerequisite that points at a LATER topic - it can never be met first and would strand the path", async () => {
     const t = convexTest(schema);
     const userId = await seedUser(t);
     const { learningPathId } = await seedPathWithTopic(
@@ -244,7 +287,7 @@ describe("getDashboardSummary next action: path scoping, locks and order", () =>
     await seedPathWithTopic(t, userId, { externalId: "basics", title: "Basics", orderIndex: 1 }, FRESH, learningPathId);
 
     const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
-    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Basics" });
+    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "Advanced" });
   });
 
   it("does not offer to continue a topic that has become locked again", async () => {
@@ -334,8 +377,13 @@ describe("getDashboardSummary reviewsDue", () => {
     const old = await seedPathWithTopic(t, userId, { externalId: "old" }, due);
     await t.run((ctx) => ctx.db.patch(old.learningPathId as never, { isActive: false }));
 
-    const { learningPathId } = await seedPathWithTopic(t, userId, { externalId: "a", title: "A", orderIndex: 0 }, due);
-    await seedPathWithTopic(t, userId, { externalId: "b", title: "B", orderIndex: 1 }, due, learningPathId);
+    const a = await seedPathWithTopic(t, userId, { externalId: "a", title: "A", orderIndex: 0 }, due);
+    const learningPathId = a.learningPathId;
+    const b = await seedPathWithTopic(t, userId, { externalId: "b", title: "B", orderIndex: 1 }, due, learningPathId);
+    await seedFinishedSession(t, userId, a.topicId);
+    await seedFinishedSession(t, userId, b.topicId);
+    // Due, but only ever practised - never learned - so not a review yet.
+    await seedPathWithTopic(t, userId, { externalId: "drilled", title: "Drilled", orderIndex: 7 }, due, learningPathId);
     await seedPathWithTopic(t, userId, { externalId: "done", orderIndex: 2 }, { status: "mastered", nextReviewDue: past() }, learningPathId);
     await seedPathWithTopic(
       t,
@@ -360,5 +408,139 @@ describe("getDashboardSummary reviewsDue", () => {
 
     const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
     expect(summary?.reviewsDue).toBe(0);
+  });
+});
+
+describe("practising ahead never changes what's next (HTML/CSS path)", () => {
+  const NEW = { status: "not_started", attemptsCount: 0 };
+  // Flexbox was drilled in Practice: attempts and a weak in-progress mastery, but never learned.
+  const DRILLED = {
+    status: "in_progress",
+    attemptsCount: 4,
+    mastery: { knowledge: 30, application: 30, debugging: 0, explanation: 0, retention: 10, overall: 25 },
+  };
+
+  async function htmlCssPath(level: "beginner" | "junior") {
+    const t = convexTest(schema);
+    const userId = await seedUser(t, { level });
+    const html = await seedPathWithTopic(t, userId, { externalId: "html", title: "HTML structure and semantics", orderIndex: 0 }, NEW);
+    const at = html.learningPathId;
+    const selectors = await seedPathWithTopic(t, userId, { externalId: "selectors", title: "CSS selectors", orderIndex: 1 }, NEW, at);
+    const flexbox = await seedPathWithTopic(t, userId, { externalId: "flexbox", title: "Flexbox", orderIndex: 2 }, DRILLED, at);
+    return { t, userId, html, selectors, flexbox };
+  }
+
+  for (const level of ["beginner", "junior"] as const) {
+    it(`${level}: after drilling Flexbox, the first step is still HTML structure, not "continue Flexbox"`, async () => {
+      const { t, userId } = await htmlCssPath(level);
+
+      const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+      expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "HTML structure and semantics" });
+    });
+  }
+
+  it("moves on to the next topic only when the current one is passed by learning it", async () => {
+    const { t, userId, html } = await htmlCssPath("beginner");
+    await seedFinishedSession(t, userId, html.topicId);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction).toMatchObject({ kind: "start", topicTitle: "CSS selectors" });
+  });
+
+  it("does not count a finished PRACTICE drill as having learned the topic", async () => {
+    const { t, userId, html } = await htmlCssPath("beginner");
+    await seedFinishedSession(t, userId, html.topicId, "practice");
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction?.topicTitle).toBe("HTML structure and semantics");
+  });
+
+  it("counts sessions from before modes were recorded as learned, so nobody's progress is taken away", async () => {
+    const { t, userId, html } = await htmlCssPath("beginner");
+    await seedFinishedSession(t, userId, html.topicId, undefined);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction?.topicTitle).toBe("CSS selectors");
+  });
+
+  it("an unfinished Learn session doesn't pass a topic - the dashboard says continue it", async () => {
+    const { t, userId, html } = await htmlCssPath("beginner");
+    await t.run(async (ctx) => {
+      const progress = await ctx.db
+        .query("topicProgress")
+        .withIndex("by_user_and_topic", (q) => q.eq("userId", userId as never).eq("topicId", html.topicId as never))
+        .unique();
+      await ctx.db.patch(progress!._id, { status: "in_progress", attemptsCount: 2 });
+      await ctx.db.insert("sessions", {
+        userId: userId as never,
+        topicId: html.topicId as never,
+        objective: "o",
+        startedAt: Date.now(),
+        exercisesPlanned: 5,
+        exercisesCompleted: 2,
+        mode: "learn",
+      });
+    });
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction).toMatchObject({ kind: "continue", topicTitle: "HTML structure and semantics" });
+  });
+
+  it("a later topic that was genuinely mastered is skipped, once the learner is free to work on it", async () => {
+    const { t, userId, html, flexbox } = await htmlCssPath("junior");
+    await seedFinishedSession(t, userId, html.topicId);
+    await t.run(async (ctx) => {
+      const progress = await ctx.db
+        .query("topicProgress")
+        .withIndex("by_user_and_topic", (q) => q.eq("userId", userId as never).eq("topicId", flexbox.topicId as never))
+        .unique();
+      await ctx.db.patch(progress!._id, { status: "mastered" });
+    });
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction?.topicTitle).toBe("CSS selectors"); // not Flexbox: done; not HTML: done
+  });
+
+  it("free-form practice topics are a sandbox: never the next step, and not counted in the path", async () => {
+    const { t, userId, html } = await htmlCssPath("junior");
+    const custom = await t.mutation(api.learningPaths.findOrCreateAdHocTopic, { userId, title: "CSS Grid layouts" });
+    await t.run(async (ctx) => {
+      const progress = await ctx.db
+        .query("topicProgress")
+        .withIndex("by_user_and_topic", (q) => q.eq("userId", userId as never).eq("topicId", custom))
+        .unique();
+      await ctx.db.patch(progress!._id, { status: "in_progress", attemptsCount: 9 });
+    });
+    await seedFinishedSession(t, userId, html.topicId);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction?.topicTitle).toBe("CSS selectors");
+    expect(summary?.topicsCount).toBe(3); // the three path topics, not four
+  });
+
+  it("reports the path as complete, with no next step, once every topic is passed", async () => {
+    const { t, userId, html, selectors, flexbox } = await htmlCssPath("beginner");
+    for (const topic of [html, selectors, flexbox]) await seedFinishedSession(t, userId, topic.topicId);
+
+    const summary = await t.query(api.dashboard.getDashboardSummary, { userId });
+
+    expect(summary?.nextAction).toBeNull();
+    expect(summary?.pathComplete).toBe(true);
+  });
+
+  it("is not 'complete' while there are still steps left, or when there is no path at all", async () => {
+    const { t, userId } = await htmlCssPath("beginner");
+    expect((await t.query(api.dashboard.getDashboardSummary, { userId }))?.pathComplete).toBe(false);
+
+    const empty = convexTest(schema);
+    const lonely = await seedUser(empty);
+    expect((await empty.query(api.dashboard.getDashboardSummary, { userId: lonely }))?.pathComplete).toBe(false);
   });
 });

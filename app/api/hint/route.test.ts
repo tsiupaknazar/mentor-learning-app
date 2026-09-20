@@ -73,4 +73,17 @@ describe("POST /api/hint", () => {
     const promptArg = generateStructuredMock.mock.calls[0]![0];
     expect(promptArg.prompt).toContain("function fix()");
   });
+
+  it("refuses with 403 topic_locked, without calling the AI, for a topic the learner hasn't reached", async () => {
+    convexQueryMock.mockImplementation(async (_ref: unknown, args: Record<string, unknown>) =>
+      "exerciseId" in args ? EXERCISE_ROW : { locked: true }
+    );
+
+    const res = await POST(jsonRequest(VALID_BODY));
+
+    const { status, body } = await statusAndBody(res);
+    expect(status).toBe(403);
+    expect(body.error).toBe("topic_locked");
+    expect(generateStructuredMock).not.toHaveBeenCalled();
+  });
 });

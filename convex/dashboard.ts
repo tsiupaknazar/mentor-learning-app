@@ -1,8 +1,8 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { masteryBand } from "./lib/bands";
-import { isTopicLocked } from "./lib/topicLocking";
-import { orderTopicsForLearning } from "./lib/topicOrder";
+import { findNextTopic } from "./lib/curriculum";
+import { analyzeLearningPath, isSandboxTopic } from "./lib/curriculumData";
 
 /**
  * Builds the compact `LearnerContext` (types/domain.ts) that every Gemini
@@ -96,69 +96,59 @@ export const getDashboardSummary = query({
       .filter((q) => q.eq(q.field("isActive"), true))
       .first();
 
-    const progressRows = await ctx.db
-      .query("topicProgress")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .collect();
+    // Everything here is about the CURRENT path's steps. Progress rows outlive
+    // their path (a new path deactivates the old one but keeps its rows), and
+    // free-form practice topics are a sandbox, not steps - neither may win the
+    // "what's next" lookup or inflate the counts.
+    const analyzed = activePath ? await analyzeLearningPath(ctx, args.userId, activePath._id) : null;
+    const curriculum = (analyzed?.topics ?? []).filter((t) => !isSandboxTopic(t));
+    const analysis = analyzed?.analysis ?? new Map();
+    const progressOf = (topicId: string) => analyzed?.progressByTopic.get(topicId);
+    const pathProgress = curriculum.flatMap((t) => progressOf(t._id) ?? []);
 
-    const topics = activePath
-      ? await ctx.db
-          .query("topics")
-          .withIndex("by_learning_path", (q) => q.eq("learningPathId", activePath._id))
-          .collect()
-      : [];
-    const titleByTopicId = new Map(topics.map((t) => [t._id, t]));
-
-    // Progress rows outlive their path (starting a new topic deactivates the old
-    // path but keeps its rows), so everything below - the next action AND the
-    // counts - only considers topics of the active path. Otherwise an old path's
-    // topic could win the lookup and leave the dashboard with no next action.
-    const pathProgress = progressRows.filter((p) => titleByTopicId.has(p.topicId));
-
-    // A topic can't be started (or continued) while a prerequisite isn't
-    // mastered, so it's never a valid suggestion - the button would just lead
-    // to the "locked" notice. Same rule as the Learn tab (convex/lib/topicLocking.ts).
-    const statusByExternalId = new Map(
-      topics.map((t) => [t.externalId, pathProgress.find((p) => p.topicId === t._id)?.status])
-    );
-    const isLocked = (topicId: string) => {
-      const topic = titleByTopicId.get(topicId as never);
-      return !topic || isTopicLocked(topic.prerequisiteExternalIds, statusByExternalId);
-    };
-
-    // Next action: prefer a topic due for spaced-repetition review, then an
-    // in-progress topic with the lowest mastery, then the first not-started
-    // topic in learning-path order.
+    // What's next is decided by the PATH, not by where the learner has been
+    // drilling: the first topic in path order that isn't passed (mastered, or
+    // a Learn session finished on it). A Practice attempt on a later topic
+    // leaves that unchanged - it used to make the dashboard say "continue
+    // Flexbox" before the learner had opened the first topic. That topic is
+    // never blocked (everything before it is passed), so there's always a
+    // valid step. Spaced-repetition reviews still come first, but only for
+    // topics the learner has actually learned.
     const now = Date.now();
-    const dueList = pathProgress
-      .filter((p) => p.nextReviewDue !== undefined && p.nextReviewDue <= now && p.status !== "mastered" && !isLocked(p.topicId))
-      .sort((a, b) => (a.nextReviewDue ?? 0) - (b.nextReviewDue ?? 0));
+    const dueList = curriculum
+      .filter((t) => {
+        const progress = progressOf(t._id);
+        const a = analysis.get(t._id);
+        return (
+          a?.passed === true &&
+          a.block === null &&
+          progress?.status !== "mastered" &&
+          progress?.nextReviewDue !== undefined &&
+          progress.nextReviewDue <= now
+        );
+      })
+      .sort((a, b) => (progressOf(a._id)?.nextReviewDue ?? 0) - (progressOf(b._id)?.nextReviewDue ?? 0));
     const dueForReview = dueList[0];
-
-    const inProgress = pathProgress
-      .filter((p) => (p.status === "in_progress" || p.status === "needs_review") && !isLocked(p.topicId))
-      .sort((a, b) => a.mastery.overall - b.mastery.overall)[0];
-
-    const notStarted = orderTopicsForLearning(topics)
-      .map((t) => ({ topic: t, progress: pathProgress.find((p) => p.topicId === t._id) }))
-      .find((x) => (!x.progress || x.progress.status === "not_started") && !isLocked(x.topic._id));
+    const frontier = findNextTopic(curriculum, analysis);
 
     let nextAction:
       | { kind: "review" | "continue" | "start"; topicId: string; topicTitle: string; mastery: number }
       | null = null;
 
     if (dueForReview) {
-      const t = titleByTopicId.get(dueForReview.topicId);
-      if (t) nextAction = { kind: "review", topicId: t._id, topicTitle: t.title, mastery: dueForReview.mastery.overall };
-    } else if (inProgress) {
-      const t = titleByTopicId.get(inProgress.topicId);
-      if (t) nextAction = { kind: "continue", topicId: t._id, topicTitle: t.title, mastery: inProgress.mastery.overall };
-    } else if (notStarted) {
       nextAction = {
-        kind: "start",
-        topicId: notStarted.topic._id,
-        topicTitle: notStarted.topic.title,
-        mastery: 0,
+        kind: "review",
+        topicId: dueForReview._id,
+        topicTitle: dueForReview.title,
+        mastery: progressOf(dueForReview._id)?.mastery.overall ?? 0,
+      };
+    } else if (frontier) {
+      const progress = progressOf(frontier._id);
+      nextAction = {
+        kind: (progress?.attemptsCount ?? 0) > 0 ? "continue" : "start",
+        topicId: frontier._id,
+        topicTitle: frontier.title,
+        mastery: progress?.mastery.overall ?? 0,
       };
     }
 
@@ -182,8 +172,10 @@ export const getDashboardSummary = query({
       },
       activePathTitle: activePath?.title ?? null,
       overallMastery,
-      topicsCount: topics.length,
+      topicsCount: curriculum.length,
       topicsMastered: pathProgress.filter((p) => p.status === "mastered").length,
+      // Every step of the path is passed - nothing left to recommend.
+      pathComplete: curriculum.length > 0 && frontier === null,
       openMistakesCount: openMistakesCount.length,
       // Topics due for spaced-repetition review (same rules as the pick above),
       // so the dashboard can say how many are waiting, not just the first.

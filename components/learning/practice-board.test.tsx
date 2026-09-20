@@ -117,13 +117,74 @@ describe("PracticeBoard", () => {
       expect(body.topicIds).toEqual(["topicA"]);
     });
 
-    it("falls back to every topic rather than generating nothing if all of them are locked", async () => {
+    it("generates nothing when every topic is blocked, rather than asking for problems the server would refuse", async () => {
       mockQueries({ path: {}, topics: [{ ...TOPIC_A, locked: true }, LOCKED_B] }, []);
       render(<PracticeBoard userId={"user1" as never} />);
 
+      await new Promise((r) => setTimeout(r, 20));
+      expect(fetch).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: /Generate more problems/ })).toBeDisabled();
+    });
+
+    it("hides problems whose topic hasn't been reached, and says how many", () => {
+      mockQueries(
+        { path: {}, topics: [TOPIC_A, LOCKED_B] },
+        [
+          problem({ _id: "p1", topicId: "topicA", title: "Open problem" }),
+          problem({ _id: "p2", topicId: "topicB", title: "Blocked problem" }),
+          problem({ _id: "p3", topicId: "topicB", title: "Another blocked one" }),
+        ]
+      );
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      expect(screen.getByText("Open problem")).toBeInTheDocument();
+      expect(screen.queryByText("Blocked problem")).not.toBeInTheDocument();
+      expect(screen.getByText(/2 problems are hidden until you reach their topics/)).toBeInTheDocument();
+    });
+
+    it("explains an otherwise empty board when everything on it is for unreached topics, and still generates for reachable ones", async () => {
+      mockQueries({ path: {}, topics: [TOPIC_A, LOCKED_B] }, [problem({ _id: "p2", topicId: "topicB", title: "Blocked problem" })]);
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      // Nothing openable on the board, so a first batch is generated - for the topic that IS open.
       await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-      const body = JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string);
-      expect(body.topicIds).toEqual(["topicA", "topicB"]);
+      expect(await screen.findByText(/1 problem is hidden until you reach its topic/)).toBeInTheDocument();
+      expect(JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string).topicIds).toEqual(["topicA"]);
+    });
+
+    it("never picks a free-form practice topic for the automatic batch", async () => {
+      const CUSTOM = { _id: "custom", title: "CSS Grid layouts", orderIndex: 0, adHoc: true, progress: { status: "in_progress" } };
+      mockQueries({ path: {}, topics: [CUSTOM, TOPIC_A] }, []);
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string).topicIds).toEqual(["topicA"]);
+    });
+
+    it("refuses 'add a topic' when the title names a topic of the path that hasn't been reached, and generates nothing", async () => {
+      mockQueries({ path: {}, topics: [TOPIC_A, LOCKED_B] }, [problem({})]);
+      vi.mocked(useMutation).mockReturnValue(vi.fn().mockResolvedValue("topicB") as never);
+      const user = userEvent.setup();
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      await user.type(screen.getByRole("textbox"), "Loops");
+      await user.click(screen.getByRole("button", { name: /Add/ }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(/haven.t reached it yet/);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it("still lets the learner add a genuinely new practice topic", async () => {
+      mockQueries({ path: {}, topics: [TOPIC_A] }, [problem({})]);
+      vi.mocked(useMutation).mockReturnValue(vi.fn().mockResolvedValue("brand-new") as never);
+      const user = userEvent.setup();
+      render(<PracticeBoard userId={"user1" as never} />);
+
+      await user.type(screen.getByRole("textbox"), "CSS Grid layouts");
+      await user.click(screen.getByRole("button", { name: /Add/ }));
+
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string).topicIds).toEqual(["brand-new"]);
     });
 
     it("labels locked topics in the topic filter", async () => {

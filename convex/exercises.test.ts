@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { seedUser, seedTopic } from "./test-helpers";
+import { seedUser, seedTopic } from "./test.helpers";
 
 function exerciseArgs(topicId: string, overrides: Record<string, unknown> = {}) {
   return {

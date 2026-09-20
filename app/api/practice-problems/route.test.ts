@@ -109,4 +109,45 @@ describe("POST /api/practice-problems", () => {
     const savedArgs = convexMutationMock.mock.calls[0]![1];
     expect(savedArgs.difficulty).toBe("hard");
   });
+
+  describe("topics the learner hasn't reached", () => {
+    const lockedTopic = (id: string, title: string, locked: boolean) => ({
+      ...TOPIC_DATA,
+      topic: { ...TOPIC_DATA.topic, _id: id, title },
+      locked,
+    });
+
+    it("refuses with 403 topic_locked, and never calls the AI, when every requested topic is blocked", async () => {
+      convexQueryMock.mockImplementation((_query, args) =>
+        "topicId" in args ? Promise.resolve(lockedTopic("t1", "Flexbox", true)) : Promise.resolve([])
+      );
+
+      const res = await POST(jsonRequest({ topicIds: ["t1"] }));
+
+      const { status, body } = await statusAndBody(res);
+      expect(status).toBe(403);
+      expect(body.error).toBe("topic_locked");
+      expect(generateStructuredMock).not.toHaveBeenCalled();
+      expect(convexMutationMock).not.toHaveBeenCalled();
+    });
+
+    it("generates only for the open topics when some are blocked", async () => {
+      convexQueryMock.mockImplementation((_query, args) => {
+        if ("topicId" in args) {
+          return Promise.resolve(
+            args.topicId === "t1" ? lockedTopic("t1", "HTML structure", false) : lockedTopic("t2", "Flexbox", true)
+          );
+        }
+        return Promise.resolve([]);
+      });
+      generateStructuredMock.mockResolvedValue({ problems: [{ ...PROBLEM, topic: "HTML structure" }] });
+
+      const res = await POST(jsonRequest({ topicIds: ["t1", "t2"] }));
+
+      expect(res.status).toBe(200);
+      const { prompt } = generateStructuredMock.mock.calls[0]![0];
+      expect(prompt).toContain("HTML structure");
+      expect(prompt).not.toContain("Flexbox");
+    });
+  });
 });

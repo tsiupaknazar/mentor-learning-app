@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { seedUser } from "./test-helpers";
+import { seedUser } from "./test.helpers";
 import {
   awardAchievement,
   awardXpMilestones,

@@ -24,6 +24,7 @@ export interface KnowledgeTopic {
   parentTopicId?: string;
   orderIndex: number;
   locked: boolean;
+  adHoc?: boolean;
   progress: {
     mastery: Record<string, number>;
     status: string;
@@ -67,8 +68,10 @@ export function KnowledgeMapView({
   );
   const translatedTitle = new Map((translated?.topics ?? []).map((tp) => [tp.externalId, tp.title]));
 
-  const ordered = orderTopicsForLearning(topics);
-  const byId = new Map(topics.map((tp) => [tp._id, tp]));
+  // Free-form practice topics aren't steps of the path.
+  const pathTopics = topics.filter((tp) => !tp.adHoc);
+  const ordered = orderTopicsForLearning(pathTopics);
+  const byId = new Map(pathTopics.map((tp) => [tp._id, tp]));
   const depthOf = (topic: KnowledgeTopic): number => {
     let depth = 0;
     let parent = topic.parentTopicId ? byId.get(topic.parentTopicId) : undefined;

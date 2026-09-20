@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatMastery } from "@/lib/utils";
 import { getDictionary } from "@/lib/i18n/dictionaries";
 import { nextActionTarget, type NextActionKind } from "@/lib/next-action";
+import { PathCompleteCard } from "@/components/learning/path-complete-card";
 
 export default async function DashboardPage() {
   const user = await requireCurrentUser();
@@ -83,6 +84,8 @@ export default async function DashboardPage() {
             </Button>
           </div>
         </div>
+      ) : summary.pathComplete ? (
+        <PathCompleteCard />
       ) : (
         <Card>
           <CardContent className="p-6 text-sm text-muted-foreground">

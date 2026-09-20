@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import schema from "./schema";
 import { api } from "./_generated/api";
-import { seedUser } from "./test-helpers";
+import { seedUser } from "./test.helpers";
 
 afterEach(() => {
   vi.useRealTimers();

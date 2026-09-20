@@ -18,11 +18,11 @@ export default async function TopicSessionPage({
 
   if (!data || data.topic.userId !== user._id) notFound();
 
-  // Blocks starting a session for a topic whose prerequisites aren't
-  // mastered yet — mirrors the lock shown in the Learn tab's topic list
+  // Blocks starting a session for a topic that's still ahead of the learner
+  // in the path — mirrors the lock shown in the Learn tab's topic list
   // (LearnPathView), but also covers direct URL navigation around it.
   if (data.locked) {
-    return <LockedTopicNotice topicTitle={data.topic.title} />;
+    return <LockedTopicNotice topicTitle={data.topic.title} blockedBy={data.blockedBy} />;
   }
 
   return (

@@ -155,6 +155,24 @@ it isn't, but the only real test is running it).
 - **The reference solution never reaches the browser.** `app/api/exercise/route.ts`
   strips it before responding; `app/api/evaluate/route.ts` and `app/api/hint/route.ts`
   re-fetch it server-side from Convex by ID.
+- **The path decides what's next; practising never advances it.** All of the rules live in
+  `convex/lib/curriculum.ts` (pure, unit-tested) and are applied by `getActiveLearningPath`,
+  `getTopic` and the dashboard through one loader (`convex/lib/curriculumData.ts`):
+  - A topic is **passed** when it is mastered *or* a **Learn** session has been finished on
+    it. Sessions record their `mode`, and a Practice drill never counts; sessions from before
+    the field existed count as Learn so nobody loses progress.
+  - The path's own order is authoritative, because the AI's `prerequisiteIds` are often empty.
+    **Beginners follow it strictly** (a topic opens only when everything before it is passed);
+    everyone else can work on any topic whose named prerequisites they've passed. Prerequisites
+    that point at the topic itself or a *later* topic are ignored (they would deadlock the path).
+  - "What's next" is the first topic in path order that isn't passed — never blocked by
+    construction, so there's always a next step. A due spaced-repetition review takes priority,
+    but only for topics that were actually learned.
+  - Blocked topics can be neither learned nor practised: `/api/exercise`, `/api/practice-problems`,
+    `/api/evaluate`, `/api/hint`, both practice pages and the board all enforce it.
+  - Topics a learner adds on the Practice board are **ad-hoc sandboxes** (`topics.adHoc`): outside
+    the path, never blocked or recommended, and not counted in progress. A title that matches an
+    existing path topic returns that topic instead, so the sandbox can't be used to dodge a lock.
 - **Model tiering.** `lib/gemini.ts` takes a `tier: "fast" | "reasoning"` parameter so
   cheap generations (hints, single exercises) can use a lighter model while full code
   review and diagnostic scoring use a stronger one — see `GEMINI_MODEL` /

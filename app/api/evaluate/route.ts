@@ -39,6 +39,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
 
+    // Grading records progress, so it must not be possible for a topic the
+    // learner hasn't reached - an old practice problem, a hand-built request.
+    const topicData = await convexQuery(api.learningPaths.getTopic, { topicId: exerciseRow.topicId });
+    if (topicData?.locked) {
+      return NextResponse.json({ error: "topic_locked" }, { status: 403 });
+    }
+
     const exercise: Exercise = {
       id: exerciseRow.externalId,
       topic: exerciseRow.subtopic,

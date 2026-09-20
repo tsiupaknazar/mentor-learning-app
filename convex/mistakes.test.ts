@@ -2,7 +2,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import schema from "./schema";
 import { api, internal } from "./_generated/api";
-import { seedUser, seedTopic } from "./test-helpers";
+import { seedUser, seedTopic } from "./test.helpers";
 
 async function insertAttemptId(t: ReturnType<typeof convexTest>, userId: string, topicId: string) {
   return t.run(async (ctx) => {
