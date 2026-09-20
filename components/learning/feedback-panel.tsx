@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, Award, CheckCircle2, Loader2, MinusCircle, TrendingUp } from "lucide-react";
+import { AlertCircle, Award, BookOpen, CheckCircle2, Loader2, MinusCircle, TrendingUp } from "lucide-react";
 
 import type { Evaluation, MentorFollowUpReaction } from "@/lib/schemas";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -31,10 +31,13 @@ const SCORE_KEYS: Array<keyof Evaluation["scores"]> = [
 export function FeedbackPanel({
   evaluation,
   exerciseId,
+  onRevisitLesson,
 }: {
   evaluation: Evaluation;
   /** Needed to answer `mentorFollowUp` — omit to render the question as read-only (no reply box). */
   exerciseId?: Id<"exercises">;
+  /** Offered when the review traced the mistake to a lesson section; omit if there's no lesson to go back to. */
+  onRevisitLesson?: (heading: string) => void;
 }) {
   const { t } = useLocale();
   const meta = RESULT_ICON[evaluation.result];
@@ -63,6 +66,17 @@ export function FeedbackPanel({
             </p>
             <p className="mt-1 text-sm text-foreground/90">{evaluation.detectedMisconception}</p>
           </div>
+        )}
+
+        {evaluation.relatedLessonSection && onRevisitLesson && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onRevisitLesson(evaluation.relatedLessonSection!)}
+          >
+            <BookOpen className="h-3.5 w-3.5" aria-hidden />
+            {t.feedback.revisitLesson(evaluation.relatedLessonSection)}
+          </Button>
         )}
 
         {evaluation.mentorFollowUp && (

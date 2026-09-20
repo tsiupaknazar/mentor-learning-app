@@ -56,6 +56,27 @@ Interview mode are stubbed with honest "not yet implemented" pages — see
   (`components/learning/concept-panel.tsx`), and re-openable at any point during the
   session via a "Show theory" toggle for revision — it isn't persisted to Convex since
   it's supplementary, not graded, and cheap enough to regenerate on request.
+  For `beginner`-level learners the same call returns a guided lesson instead of one
+  paragraph: an intro plus 3-6 small `sections` (core idea, a minimal example, a variation,
+  common mistakes) and a recap, with the examples' `language` so HTML/CSS isn't highlighted
+  as JavaScript. `ConceptLesson` pages through it with Back/Next; "Show theory" reopens it
+  stacked on one page. Every other level keeps the single quick concept (`sections` empty).
+  Follow-ups to that lesson:
+  - **Depth is the learner's call.** The intro screen pre-selects "Full lesson" or "Quick
+    refresher" (`lib/concept-depth.ts`: beginners, or anyone on a topic they've never
+    attempted, get the full one) and `/api/concept` takes a `depth`.
+  - **Lessons are cached and shared** in Convex (`convex/concepts.ts`, `conceptCache`), keyed by
+    topic + depth + level + style + language, so the prompt holds nothing personal and the
+    slower "reasoning" model is affordable for the full lesson. Bump `CONCEPT_PROMPT_VERSION`
+    when the prompt changes.
+  - Each step can carry an ungraded **quick check**; examples can be edited and run
+    (`try-it-example.tsx`: JS/TS in the sandboxed worker, HTML in a sandboxed iframe); a
+    "something unclear or wrong?" link sends a tagged report through the feedback email.
+  - A review that traces a mistake to a lesson section (`relatedLessonSection`, validated
+    against the headings the client sent) offers "Revisit the lesson: ...".
+  - A beginner's first two exercises on a topic are faded worked examples
+    (`lib/scaffolding.ts`), and the learning style now nudges which exercise types are
+    generated (`exerciseStyleGuidance` in `lib/prompts.ts`).
 - **Diagnostic was too shallow to place someone across a broad topic.** A fixed 5-6
   questions can't cover a whole topic like "JavaScript" — you'd get a placement based on
   a handful of lucky/unlucky guesses. `lib/prompts.ts`'s `buildDiagnosticPrompt` now has

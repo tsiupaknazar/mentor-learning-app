@@ -61,6 +61,7 @@ const EVALUATION = {
   nextStep: "next",
   detectedMisconception: null,
   detectedMisconceptionKey: null,
+  relatedLessonSection: null,
   mentorFollowUp: null,
 };
 
@@ -199,5 +200,37 @@ describe("POST /api/evaluate", () => {
   it("checks the lock of the exercise's own topic", async () => {
     await POST(jsonRequest(VALID_BODY));
     expect(convexQueryMock).toHaveBeenCalledWith(expect.anything(), { topicId: "topic1" });
+  });
+
+  describe("pointing back at the lesson", () => {
+    const SECTIONS = ["What is a tag?", "Common mistakes"];
+
+    it("gives the model the lesson's headings and passes on the section it names", async () => {
+      generateStructuredMock.mockResolvedValue({ ...EVALUATION, result: "incorrect", relatedLessonSection: "Common mistakes" });
+
+      const res = await POST(jsonRequest({ ...VALID_BODY, lessonSections: SECTIONS }));
+
+      const { body } = await statusAndBody(res);
+      expect(generateStructuredMock.mock.calls[0]![0].prompt).toContain(JSON.stringify(SECTIONS));
+      expect(body.evaluation.relatedLessonSection).toBe("Common mistakes");
+    });
+
+    it("drops a section the model made up, rather than linking to something that isn't in the lesson", async () => {
+      generateStructuredMock.mockResolvedValue({ ...EVALUATION, relatedLessonSection: "Invented heading" });
+
+      const { body } = await statusAndBody(await POST(jsonRequest({ ...VALID_BODY, lessonSections: SECTIONS })));
+
+      expect(body.evaluation.relatedLessonSection).toBeNull();
+    });
+
+    it("never offers a section when no lesson was shown", async () => {
+      generateStructuredMock.mockResolvedValue({ ...EVALUATION, relatedLessonSection: "What is a tag?" });
+
+      const res = await POST(jsonRequest(VALID_BODY));
+
+      const { body } = await statusAndBody(res);
+      expect(generateStructuredMock.mock.calls[0]![0].prompt).toContain('Set "relatedLessonSection" to null');
+      expect(body.evaluation.relatedLessonSection).toBeNull();
+    });
   });
 });

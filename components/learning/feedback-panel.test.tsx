@@ -15,8 +15,30 @@ const BASE_EVALUATION: Evaluation = {
   nextStep: "Try a harder one.",
   detectedMisconception: null,
   detectedMisconceptionKey: null,
+  relatedLessonSection: null,
   mentorFollowUp: null,
 };
+
+describe("FeedbackPanel: revisiting the lesson", () => {
+  const INCORRECT: Evaluation = { ...BASE_EVALUATION, result: "incorrect", relatedLessonSection: "Common mistakes" };
+
+  it("offers to revisit the lesson section the mistake traces to", async () => {
+    const onRevisitLesson = vi.fn();
+    render(<FeedbackPanel evaluation={INCORRECT} onRevisitLesson={onRevisitLesson} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Revisit the lesson: Common mistakes" }));
+
+    expect(onRevisitLesson).toHaveBeenCalledWith("Common mistakes");
+  });
+
+  it("offers nothing without a section, or without a lesson to go back to", () => {
+    const { rerender } = render(<FeedbackPanel evaluation={BASE_EVALUATION} onRevisitLesson={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Revisit the lesson/ })).not.toBeInTheDocument();
+
+    rerender(<FeedbackPanel evaluation={INCORRECT} />);
+    expect(screen.queryByRole("button", { name: /Revisit the lesson/ })).not.toBeInTheDocument();
+  });
+});
 
 describe("FeedbackPanel", () => {
   it.each([

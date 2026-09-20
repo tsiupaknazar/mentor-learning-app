@@ -454,4 +454,15 @@ export default defineSchema({
     fields: v.string(),
     createdAt: v.number(),
   }).index("by_source", ["sourceTable", "sourceId", "locale"]),
+
+  // Generated lessons ("concepts"), shared between learners: the key (see
+  // conceptCacheKey in lib/concept-depth.ts) holds everything the prompt
+  // depends on, and the prompt holds nothing personal, so one generation
+  // serves everyone with the same key. `concept` is the JSON string of a
+  // conceptSchema value - re-validated by the reader, never trusted.
+  conceptCache: defineTable({
+    key: v.string(),
+    concept: v.string(),
+    createdAt: v.number(),
+  }).index("by_key", ["key"]),
 });

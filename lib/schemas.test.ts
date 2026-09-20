@@ -66,6 +66,56 @@ describe("looseNullable (via conceptSchema.example)", () => {
   });
 });
 
+describe("conceptSchema.sections (the beginner lesson)", () => {
+  const base = {
+    topic: "HTML",
+    subtopic: "Headings",
+    explanation: "Headings title a section.",
+    keyPoints: ["h1 is the biggest", "One h1 per page"],
+  };
+
+  it("is optional, so a concept cached before lessons existed still parses", () => {
+    expect(conceptSchema.parse(base).sections).toBeUndefined();
+  });
+
+  it("accepts sections, normalizing a missing example to null", () => {
+    const result = conceptSchema.parse({
+      ...base,
+      language: "html",
+      sections: [{ heading: "What is a tag?", body: "It labels content." }],
+    });
+    expect(result.sections).toEqual([{ heading: "What is a tag?", body: "It labels content.", example: null, check: null }]);
+    expect(result.language).toBe("html");
+  });
+
+  const section = { heading: "What is a tag?", body: "It labels content." };
+  const check = { question: "Which is a tag?", choices: ["<p>", "p"], correctIndex: 0, explanation: "Tags have angle brackets." };
+
+  it("keeps a well-formed self-check on a section", () => {
+    const result = conceptSchema.parse({ ...base, sections: [{ ...section, check }] });
+    expect(result.sections![0]!.check).toEqual(check);
+  });
+
+  it("treats a missing self-check as none", () => {
+    expect(conceptSchema.parse({ ...base, sections: [section] }).sections![0]!.check).toBeNull();
+  });
+
+  it("drops a malformed self-check instead of failing the whole lesson", () => {
+    const outOfRange = { ...check, correctIndex: 3 };
+    const tooFewChoices = { ...check, choices: ["<p>"] };
+    for (const bad of [outOfRange, tooFewChoices, { question: "q" }, "nonsense"]) {
+      const result = conceptSchema.parse({ ...base, sections: [{ ...section, check: bad }] });
+      expect(result.sections![0]!.check).toBeNull();
+      expect(result.sections![0]!.heading).toBe("What is a tag?");
+    }
+  });
+
+  it("rejects a section without a heading or body", () => {
+    expect(() => conceptSchema.parse({ ...base, sections: [{ heading: "", body: "x" }] })).toThrow();
+    expect(() => conceptSchema.parse({ ...base, sections: [{ heading: "x", body: "" }] })).toThrow();
+  });
+});
+
 describe("DIAGNOSTIC_QUESTION_COUNT bound, shared by diagnosticSetSchema", () => {
   it("rejects fewer questions than the minimum", () => {
     const tooFew = Array.from({ length: DIAGNOSTIC_QUESTION_COUNT.min - 1 }, (_, i) => ({

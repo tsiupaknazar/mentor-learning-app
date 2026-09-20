@@ -6,7 +6,7 @@ import { ArrowRight, Lightbulb, BookOpen } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { AttemptReward, ClientExercise, DailyTime, ExerciseType } from "@/types/domain";
+import type { AttemptReward, ClientExercise, ConceptDepth, DailyTime, ExerciseType, SkillLevel } from "@/types/domain";
 import type { Concept, Evaluation, Hint } from "@/lib/schemas";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { CodeEditor } from "@/components/learning/code-editor";
 import { ReadOnlyCode } from "@/components/learning/read-only-code";
-import { ConceptPanel } from "@/components/learning/concept-panel";
+import { ConceptLesson, ConceptPanel } from "@/components/learning/concept-panel";
 import { FeedbackPanel, RewardStrip } from "@/components/learning/feedback-panel";
 import { SessionSummary } from "@/components/learning/session-summary";
 import { LoadingSteps } from "@/components/learning/loading-steps";
@@ -25,6 +25,8 @@ import { SESSION_TTL_MS, loadDraft, saveDraft, useDraft } from "@/lib/drafts";
 import { EMPTY_ROUND_LOG, recordAttemptInLog, type RoundLog } from "@/lib/round-log";
 import { apiErrorMessage, apiFetch } from "@/lib/api-client";
 import { exercisesForDailyTime } from "@/lib/session-length";
+import { defaultConceptDepth } from "@/lib/concept-depth";
+import { cn } from "@/lib/utils";
 import type { Dictionary } from "@/lib/i18n/dictionaries";
 
 interface SessionRunnerProps {
@@ -33,6 +35,12 @@ interface SessionRunnerProps {
   topicTitle: string;
   topicSummary: string;
   masteryOverall: number;
+  /**
+   * The learner's overall skill level. With their mastery of this topic it
+   * decides which theory is pre-selected on the intro screen (a full lesson
+   * for a beginner or a brand-new topic, else a quick refresher).
+   */
+  level?: SkillLevel;
   /**
    * The broader context this topic sits within — its immediate parent
    * topic's title (e.g. "Functions" for a "Closures" child topic), or the
@@ -129,6 +137,7 @@ export function SessionRunner({
   topicTitle,
   topicSummary,
   masteryOverall,
+  level,
   topicContextLabel,
   mode = "learn",
   dailyTime,
@@ -157,6 +166,10 @@ export function SessionRunner({
 
   const [concept, setConcept] = useState<Concept | null>(null);
   const [showTheory, setShowTheory] = useState(false);
+  // A lesson section to scroll to and highlight when theory is (re)opened.
+  const [theoryFocus, setTheoryFocus] = useState<string | undefined>(undefined);
+  // Chosen on the intro screen; pre-selected from level and topic mastery.
+  const [depth, setDepth] = useState<ConceptDepth>(() => defaultConceptDepth(level ?? "intermediate", masteryOverall));
 
   const [exercise, setExercise] = useState<ClientExercise | null>(null);
   const [exerciseId, setExerciseId] = useState<Id<"exercises"> | null>(null);
@@ -175,28 +188,30 @@ export function SessionRunner({
   // learner clicked Start (then made them wait for it, every session). Now it
   // is requested as soon as the intro screen shows, so it's usually ready by
   // the time they click, and cached per topic + language so revisits are free.
-  const conceptKey = `concept:${topicId}:${locale}`;
-  const conceptRequest = useRef<Promise<Concept | null> | null>(null);
+  const conceptKey = `concept:${topicId}:${locale}:${depth}`;
+  // Keyed, since switching depth on the intro screen needs a different request.
+  const conceptRequest = useRef<{ key: string; promise: Promise<Concept | null> } | null>(null);
   const requestConcept = useCallback((): Promise<Concept | null> => {
     const cached = loadDraft<Concept>(conceptKey, SESSION_TTL_MS);
     if (cached) return Promise.resolve(cached);
     return apiFetch<{ concept: Concept }>("/api/concept", {
       topic: topicContextLabel ?? topicTitle,
       subtopic: topicTitle,
+      depth,
     })
       .then((data) => {
         saveDraft(conceptKey, data.concept);
         return data.concept;
       })
       .catch(() => null); // theory is optional; the caller decides what a miss means
-  }, [conceptKey, topicContextLabel, topicTitle]);
+  }, [conceptKey, depth, topicContextLabel, topicTitle]);
 
   useEffect(() => {
     // Not for practice (no theory step), and not while an unfinished session
     // is on offer - most of those learners will resume rather than start over.
-    if (isPractice || !snapshotReady || snapshot || conceptRequest.current) return;
-    conceptRequest.current = requestConcept();
-  }, [isPractice, snapshotReady, snapshot, requestConcept]);
+    if (isPractice || !snapshotReady || snapshot || conceptRequest.current?.key === conceptKey) return;
+    conceptRequest.current = { key: conceptKey, promise: requestConcept() };
+  }, [isPractice, snapshotReady, snapshot, conceptKey, requestConcept]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -286,6 +301,7 @@ export function SessionRunner({
     setVisibleHints([]);
     setSolutionRevealed(false);
     setShowTheory(false);
+    setTheoryFocus(undefined);
     setEvaluation(null);
     setReward(null);
     setHintError(null);
@@ -312,13 +328,16 @@ export function SessionRunner({
     }
     setPhase("loading_concept");
     setError(null);
-    const wasPrefetched = conceptRequest.current !== null;
-    let loaded = await (conceptRequest.current ??= requestConcept());
+    const wasPrefetched = conceptRequest.current?.key === conceptKey;
+    let request = wasPrefetched ? conceptRequest.current! : { key: conceptKey, promise: requestConcept() };
+    conceptRequest.current = request;
+    let loaded = await request.promise;
     if (!loaded && wasPrefetched) {
       // The background attempt missed (e.g. a blip) - one more try now that
       // the learner is actually waiting on it.
-      conceptRequest.current = requestConcept();
-      loaded = await conceptRequest.current;
+      request = { key: conceptKey, promise: requestConcept() };
+      conceptRequest.current = request;
+      loaded = await request.promise;
     }
     if (loaded) {
       setConcept(loaded);
@@ -388,6 +407,8 @@ export function SessionRunner({
         hintsUsed,
         solutionRevealed,
         sessionId,
+        // So the review can point at the lesson section covering a mistake.
+        lessonSections: lessonHeadings.length > 0 ? lessonHeadings : undefined,
       });
       const result = data.evaluation;
       const earned = data.reward ?? null;
@@ -435,6 +456,13 @@ export function SessionRunner({
     }
   }
 
+  const lessonHeadings = concept?.sections?.map((s) => s.heading) ?? [];
+
+  function revisitLesson(heading: string) {
+    setTheoryFocus(heading);
+    setShowTheory(true);
+  }
+
   async function handleNext(challenge: boolean) {
     if (!sessionId) return;
     const next = completedCount + 1;
@@ -471,6 +499,9 @@ export function SessionRunner({
             )}
           </CardContent>
         </Card>
+        {!isPractice && (
+          <DepthPicker depth={depth} onChange={setDepth} t={t} />
+        )}
         {snapshotReady && snapshot && (
           <Card className="border-accent/40">
             <CardContent className="space-y-3 p-5">
@@ -506,7 +537,7 @@ export function SessionRunner({
   if (phase === "loading_concept" || phase === "loading_exercise" || phase === "submitting") {
     const messages =
       phase === "loading_concept"
-        ? [t.session.preparingConcept, ...t.session.conceptSteps]
+        ? [depth === "full" ? t.session.preparingLesson : t.session.preparingConcept, ...t.session.conceptSteps]
         : phase === "submitting"
           ? [t.session.reviewingAnswer, ...t.session.reviewSteps]
           : [t.session.preparingExercise, ...t.session.exerciseSteps];
@@ -518,11 +549,7 @@ export function SessionRunner({
     return (
       <div className="space-y-6">
         <Header topicTitle={topicTitle} completedCount={0} total={planned} mode={mode} t={t} />
-        <ConceptPanel concept={concept} />
-        <Button onClick={beginPractice} size="lg">
-          {t.session.startPracticingButton}
-          <ArrowRight className="h-4 w-4" aria-hidden />
-        </Button>
+        <ConceptLesson concept={concept} onFinish={beginPractice} />
       </div>
     );
   }
@@ -555,7 +582,12 @@ export function SessionRunner({
     return (
       <div className="space-y-6">
         <Header topicTitle={topicTitle} completedCount={completedCount} total={planned} mode={mode} t={t} />
-        <FeedbackPanel evaluation={evaluation} exerciseId={exerciseId ?? undefined} />
+        <FeedbackPanel
+          evaluation={evaluation}
+          exerciseId={exerciseId ?? undefined}
+          onRevisitLesson={lessonHeadings.length > 0 ? revisitLesson : undefined}
+        />
+        {showTheory && concept && <ConceptPanel concept={concept} focusHeading={theoryFocus} />}
         {reward && <RewardStrip reward={reward} />}
         <div className="flex flex-wrap gap-3">
           {evaluation.result !== "correct" && (
@@ -603,7 +635,10 @@ export function SessionRunner({
                   variant="ghost"
                   size="sm"
                   className="h-7 px-2 text-xs text-muted-foreground"
-                  onClick={() => setShowTheory((v) => !v)}
+                  onClick={() => {
+                    setTheoryFocus(undefined);
+                    setShowTheory((v) => !v);
+                  }}
                 >
                   <BookOpen className="h-3.5 w-3.5" aria-hidden />
                   {showTheory ? t.session.hideTheory : t.session.showTheory}
@@ -618,7 +653,7 @@ export function SessionRunner({
         </Card>
 
         {/* Revisit theory without leaving the exercise — for study/revision, not just first pass */}
-        {showTheory && concept && <ConceptPanel concept={concept} />}
+        {showTheory && concept && <ConceptPanel concept={concept} focusHeading={theoryFocus} />}
 
         {/* Reference code to read (predict/explain/find-the-bug/review/compare) — never the answer itself */}
         {isReadOnlyCode && exercise.starterCode && (
@@ -684,6 +719,40 @@ export function SessionRunner({
   }
 
   return null;
+}
+
+/**
+ * Lets the learner pick how much theory to read first. Pre-selected from their
+ * level and mastery of the topic, but theirs to change: someone experienced
+ * may still be new to a topic, and a beginner may already know one.
+ */
+function DepthPicker({ depth, onChange, t }: { depth: ConceptDepth; onChange: (d: ConceptDepth) => void; t: Dictionary }) {
+  const options: Array<{ value: ConceptDepth; label: string; hint: string }> = [
+    { value: "full", label: t.session.depthFull, hint: t.session.depthFullHint },
+    { value: "quick", label: t.session.depthQuick, hint: t.session.depthQuickHint },
+  ];
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">{t.session.theoryDepthLabel}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={depth === o.value}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "rounded-md border px-3 py-2 text-left transition-colors",
+              depth === o.value ? "border-accent bg-accent/10" : "border-border bg-surface hover:bg-muted"
+            )}
+          >
+            <span className="block text-sm font-medium">{o.label}</span>
+            <span className="block text-xs text-muted-foreground">{o.hint}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function Header({

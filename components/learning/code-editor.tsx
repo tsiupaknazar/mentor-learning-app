@@ -24,6 +24,8 @@ interface CodeEditorProps {
   onChange: (code: string) => void;
   language?: ProgrammingLanguage;
   filename?: string;
+  /** Sized to its content (up to a cap) instead of a fixed 240px - for short snippets. */
+  compact?: boolean;
 }
 
 const RUNNABLE_LANGUAGES = new Set<ProgrammingLanguage>(["javascript", "typescript"]);
@@ -38,7 +40,14 @@ const RUNNABLE_LANGUAGES = new Set<ProgrammingLanguage>(["javascript", "typescri
  * running HTML/CSS/Python/SQL through a JS eval worker doesn't mean
  * anything; HTML/CSS get a live preview instead in MultiFileEditor.
  */
-export function CodeEditor({ starterCode, initialCode, onChange, language = "javascript", filename }: CodeEditorProps) {
+export function CodeEditor({
+  starterCode,
+  initialCode,
+  onChange,
+  language = "javascript",
+  filename,
+  compact = false,
+}: CodeEditorProps) {
   const { t } = useLocale();
   const [code, setCode] = useState(initialCode ?? starterCode);
   const initialCodeRef = useRef(starterCode);
@@ -170,7 +179,7 @@ export function CodeEditor({ starterCode, initialCode, onChange, language = "jav
       </div>
       <CodeMirror
         value={code}
-        height="240px"
+        {...(compact ? { minHeight: "96px", maxHeight: "260px" } : { height: "240px" })}
         theme={oneDark}
         extensions={[languageExtension(language)]}
         onChange={handleChange}

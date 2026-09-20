@@ -20,6 +20,9 @@ const requestSchema = z.object({
   hintsUsed: z.number().int().min(0).max(3),
   solutionRevealed: z.boolean(),
   sessionId: z.string().min(1).nullable(),
+  // Headings of the lesson the learner was shown for this topic, if any, so
+  // the review can point at the section that covers their mistake.
+  lessonSections: z.array(z.string().min(1).max(100)).max(8).optional(),
 });
 
 /**
@@ -64,7 +67,12 @@ export async function POST(req: Request) {
     };
 
     const learnerContext = await getLearnerContext(user._id);
-    const { system, prompt } = buildEvaluationPrompt(learnerContext, exercise, body.submittedAnswer);
+    const { system, prompt } = buildEvaluationPrompt(
+      learnerContext,
+      exercise,
+      body.submittedAnswer,
+      body.lessonSections
+    );
 
     const evaluation = await generateStructured({
       schema: evaluationSchema,
@@ -73,6 +81,11 @@ export async function POST(req: Request) {
       prompt,
       tier: "reasoning",
     });
+    // Only ever point at a section that was actually offered - never trust
+    // the model to have copied a heading exactly.
+    if (!body.lessonSections?.includes(evaluation.relatedLessonSection ?? "")) {
+      evaluation.relatedLessonSection = null;
+    }
 
     const attempt = await convexMutation(api.attempts.recordAttempt, {
       userId: user._id,

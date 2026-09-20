@@ -1,5 +1,6 @@
 import type { Exercise, KnowledgeProfile } from "@/lib/schemas";
-import type { LearnerContext, Locale } from "@/types/domain";
+import type { ConceptDepth, LearnerContext, LearningStyle, Locale } from "@/types/domain";
+import type { ScaffoldStep } from "@/lib/scaffolding";
 import { resolveProjectLanguageScope } from "@/lib/topic-language";
 
 const LANGUAGE_NAMES: Record<Locale, string> = {
@@ -135,8 +136,38 @@ ${topicLines}
 For EACH topic above, generate exactly ${perTopicCounts.easy} easy, ${perTopicCounts.medium} medium, and ${perTopicCounts.hard} hard problems (${total} problems total across all topics).
 Problems already generated recently (do not repeat these, generate distinct problems): ${avoidTitles.length ? avoidTitles.join(", ") : "none"}
 
-Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits each problem — vary it across the set, don't default to implementation every time. Give each a stable id and a short, punchy, LeetCode-style title (e.g. "Two Sum", "Debounce a Function") rather than a generic label. Set "difficulty" to exactly "easy", "medium", or "hard" for every problem — never use "interview" or "real_world" here. Set "language" per the requirement stated for each topic above. If it's a coding problem, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution.`,
+Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits each problem — vary it across the set, don't default to implementation every time. Give each a stable id and a short, punchy, LeetCode-style title (e.g. "Two Sum", "Debounce a Function") rather than a generic label. ${exerciseStyleGuidance(ctx.learningStyle) ? `${exerciseStyleGuidance(ctx.learningStyle)} Still vary the types across the set. ` : ""}Set "difficulty" to exactly "easy", "medium", or "hard" for every problem — never use "interview" or "real_world" here. Set "language" per the requirement stated for each topic above. If it's a coding problem, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution.`,
   };
+}
+
+/**
+ * Nudges which exercise types get picked, from the learner's stated style.
+ * "balanced" is no nudge at all - the model's own variety is the balance.
+ */
+export function exerciseStyleGuidance(style: LearningStyle): string {
+  if (style === "more_theory") {
+    return "The learner prefers understanding over drilling: lean toward exercises that test reasoning about code (multiple_choice, code_prediction, explain_code, find_the_bug, compare_implementations, architecture_decision) and that ask them to explain why, over exercises where they mostly write code.";
+  }
+  if (style === "more_practice") {
+    return "The learner prefers hands-on practice: lean toward exercises where they write or edit real code (implementation, code_completion, debugging, refactoring, optimize_code, write_tests) over exercises that only ask them to read and explain.";
+  }
+  return "";
+}
+
+/**
+ * Faded worked examples for a beginner's first exercises on a topic: a fully
+ * worked example with one blank, then a skeleton with a few, then normal
+ * exercises. Support is withdrawn gradually so the first exercise isn't a
+ * blank page.
+ */
+function scaffoldingGuidance(step: ScaffoldStep | null): string {
+  if (step === 0) {
+    return `SCAFFOLDING - this is the learner's very first exercise on this topic and they are a beginner, so make it a worked example to finish, not a blank page. Use exercise type "code_completion" when this subtopic involves writing code (otherwise "multiple_choice" or "code_prediction"). The starterCode must be a complete, working, well-commented example of a closely related tiny task with exactly ONE clearly marked blank ("____") for the learner to fill in, and the prompt must say what the example does and which part to complete. Keep it easy.`;
+  }
+  if (step === 1) {
+    return `SCAFFOLDING - this is the learner's second exercise on this topic and they are a beginner, so fade the support. Use exercise type "code_completion". The starterCode gives the overall structure with a comment saying what each part should do, but leaves two or three parts blank ("____") for the learner to write. Do not include a worked solution to a related task this time.`;
+  }
+  return "";
 }
 
 export function buildExercisePrompt(
@@ -145,8 +176,10 @@ export function buildExercisePrompt(
   subtopic: string,
   difficulty: string,
   avoidExerciseTitles: string[],
-  requiredLanguage: string | null
+  requiredLanguage: string | null,
+  scaffold: ScaffoldStep | null = null
 ) {
+  const guidance = [exerciseStyleGuidance(ctx.learningStyle), scaffoldingGuidance(scaffold)].filter(Boolean).join("\n");
   const languageLine = requiredLanguage
     ? `Language MUST be "${requiredLanguage}" — this topic names that language explicitly, it is not a judgment call.`
     : `Pick whichever of javascript/typescript/html/css/python/sql the subtopic is actually written in — a CSS layout topic should produce CSS, a SQL topic should produce SQL, and so on.`;
@@ -158,7 +191,7 @@ Subtopic: ${subtopic}
 Target difficulty: ${difficulty}
 Exercises the learner has already seen recently (do not repeat these, generate something distinct): ${avoidExerciseTitles.length ? avoidExerciseTitles.join(", ") : "none"}
 
-Generate one exercise. Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, architecture_decision, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits this subtopic and difficulty — vary it, don't default to implementation every time. Give it a stable id. ${languageLine} If it's a coding exercise, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution (even for non-coding types, describe the ideal answer there).
+Generate one exercise. Pick whichever exercise type (multiple_choice, code_prediction, code_completion, debugging, refactoring, implementation, architecture_decision, explain_code, find_the_bug, compare_implementations, optimize_code, write_tests, review_code) best fits this subtopic and difficulty — vary it, don't default to implementation every time. Give it a stable id. ${languageLine} If it's a coding exercise, include starterCode and testCases; otherwise set those to null. Always include a complete referenceSolution (even for non-coding types, describe the ideal answer there).${guidance ? `\n\n${guidance}` : ""}
 
 HARD CONSTRAINT: this exercise must test ONLY "${subtopic}" itself, regardless of difficulty. Do not pull in concepts, APIs, or techniques that belong to a different topic in the learner's path — especially a more advanced one they haven't reached yet, since the learner may not have unlocked it. Raise difficulty by testing "${subtopic}" more rigorously (deeper edge cases, subtler bugs, less hand-holding, higher ambiguity), never by importing material from outside it.`,
   };
@@ -171,8 +204,12 @@ HARD CONSTRAINT: this exercise must test ONLY "${subtopic}" itself, regardless o
 export function buildEvaluationPrompt(
   ctx: LearnerContext,
   exercise: Exercise,
-  userAnswer: string
+  userAnswer: string,
+  lessonSections: string[] = []
 ) {
+  const lessonLine = lessonSections.length
+    ? `The learner was just taught these lesson sections on this topic: ${JSON.stringify(lessonSections)}. If their mistake shows they misunderstood something one of those sections covers, set "relatedLessonSection" to that section's heading EXACTLY as written above; otherwise (including for a correct answer) set it to null.`
+    : `Set "relatedLessonSection" to null.`;
   return {
     system: `${MENTOR_PERSONA}\n\nYou are reviewing a submitted answer against a specific exercise. Return ONLY JSON matching the required schema — the "whatYouDid", "problem", "whyItMatters", "hint", and "nextStep" fields map directly to a structured feedback panel the learner will read, so write each as a short, direct statement (1-3 sentences), never a wall of text.${languageInstruction(ctx.locale)}`,
     prompt: `Learner context: ${formatLearnerContext(ctx)}
@@ -186,7 +223,7 @@ ${exercise.referenceSolution}
 Learner's submitted answer:
 ${userAnswer}
 
-Evaluate correctness, logic, code quality, best practices, and edge case handling (0-100 each). Set "result" to correct/partially_correct/incorrect. If the answer is correct but poorly implemented, "result" should still reflect that nuance in the scores (e.g. correctness high, codeQuality low) — do not inflate the overall read of quality just because it runs. If a specific misconception is evident (not just a typo), name it in "detectedMisconception" (in the learner's language) AND give "detectedMisconceptionKey": a short, stable identifier for it in English, kebab-case, 2-5 words (e.g. "off-by-one-loop-bound", "missing-await", "mutating-state-directly") — this is what the app uses to recognize the SAME misconception recurring later even if the learner's display language changes, so keep it consistent and specific to the actual error, not generic. Otherwise set both to null. If the learner's stated reasoning is vague or unjustified, add a direct challenging question in "mentorFollowUp" (e.g. asking them to justify a choice) — the learner WILL be able to type a reply to it, so only ask something they can meaningfully answer in a sentence or two, never rhetorical; otherwise null.`,
+Evaluate correctness, logic, code quality, best practices, and edge case handling (0-100 each). Set "result" to correct/partially_correct/incorrect. If the answer is correct but poorly implemented, "result" should still reflect that nuance in the scores (e.g. correctness high, codeQuality low) — do not inflate the overall read of quality just because it runs. If a specific misconception is evident (not just a typo), name it in "detectedMisconception" (in the learner's language) AND give "detectedMisconceptionKey": a short, stable identifier for it in English, kebab-case, 2-5 words (e.g. "off-by-one-loop-bound", "missing-await", "mutating-state-directly") — this is what the app uses to recognize the SAME misconception recurring later even if the learner's display language changes, so keep it consistent and specific to the actual error, not generic. Otherwise set both to null. If the learner's stated reasoning is vague or unjustified, add a direct challenging question in "mentorFollowUp" (e.g. asking them to justify a choice) — the learner WILL be able to type a reply to it, so only ask something they can meaningfully answer in a sentence or two, never rhetorical; otherwise null. ${lessonLine}`,
   };
 }
 
@@ -219,7 +256,22 @@ Learner's reply: ${learnerResponse}`,
 // Concept / theory block
 // ---------------------------------------------------------------------------
 
-export function buildConceptPrompt(ctx: LearnerContext, topic: string, subtopic: string) {
+/**
+ * What a concept prompt may depend on. Deliberately NOT the full learner
+ * context: the generated concept is cached and shared between learners
+ * (convex/concepts.ts), keyed on exactly these fields, so nothing personal
+ * (weak topics, mistakes, performance) can be in the prompt.
+ */
+export type ConceptContext = Pick<LearnerContext, "level" | "learningStyle" | "locale">;
+
+export function buildConceptPrompt(
+  ctx: ConceptContext,
+  topic: string,
+  subtopic: string,
+  depth: ConceptDepth = ctx.level === "beginner" ? "full" : "quick"
+) {
+  if (depth === "full") return buildBeginnerLessonPrompt(ctx, topic, subtopic);
+
   const lengthGuidance =
     ctx.learningStyle === "more_theory"
       ? "The learner prefers more theory — you can go slightly deeper, but still stay concise (a paragraph, not an essay)."
@@ -228,13 +280,45 @@ export function buildConceptPrompt(ctx: LearnerContext, topic: string, subtopic:
         : "Keep this concise — a short paragraph, not a lecture.";
   return {
     system: `You write short "quick concept" explanations for a practice-first programming platform. This is NOT a full lesson — it's the minimum context a learner needs before attempting a problem. Never write a wall of text. Prefer one concrete example over multiple abstract ones. Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
-    prompt: `Learner context: ${formatLearnerContext(ctx)}
+    prompt: `Learner: ${JSON.stringify({ level: ctx.level, learningStyle: ctx.learningStyle })}
 Topic: ${topic}
 Subtopic: ${subtopic}
 
 Write a short concept explanation for "${subtopic}" (within "${topic}"). ${lengthGuidance}
 Include 2-6 short keyPoints (each one line, not a paragraph) the learner should walk away with.
-Include one small, realistic code example with a one-to-two-sentence explanation of what it shows — unless this subtopic genuinely has no meaningful code example (e.g. a purely conceptual/architectural topic), in which case set "example" to null.`,
+Include one small, realistic code example with a one-to-two-sentence explanation of what it shows — unless this subtopic genuinely has no meaningful code example (e.g. a purely conceptual/architectural topic), in which case set "example" to null.
+Set "language" to the language the example is written in (null when there is no example). Set "sections" to an empty array.`,
+  };
+}
+
+/**
+ * The quick concept assumes the learner already has the surrounding
+ * vocabulary, which an absolute beginner doesn't - one short paragraph leaves
+ * them with nothing to attempt the exercises with. So for level "beginner"
+ * the same call produces a short guided lesson instead: several small
+ * sections, each teaching one idea, in the order a good tutor would.
+ */
+function buildBeginnerLessonPrompt(ctx: ConceptContext, topic: string, subtopic: string) {
+  const sectionCount =
+    ctx.learningStyle === "more_theory"
+      ? "5-6"
+      : ctx.learningStyle === "more_practice"
+        ? "3-4"
+        : "4-5";
+  return {
+    system: `You are a patient programming tutor teaching an ABSOLUTE BEGINNER who may have never written code, on a platform where they learn by doing. Before their first exercise on a topic you give them a short guided lesson: enough that they can genuinely attempt the exercises, but split into small bite-sized sections, never a wall of text. Assume nothing: the first time you use any technical term, say what it means in plain words. Prefer everyday analogies to jargon. Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
+    prompt: `Learner: ${JSON.stringify({ level: ctx.level, learningStyle: ctx.learningStyle })}
+Topic: ${topic}
+Subtopic: ${subtopic}
+
+Write a beginner's lesson on "${subtopic}" (within "${topic}"):
+- "explanation": the opening, 2-4 plain sentences on what "${subtopic}" is and why anyone would need it. Use an everyday analogy if one fits.
+- "sections": ${sectionCount} short sections, in this order of ideas: the core idea in small pieces; the smallest possible code example, explained step by step; a second example that changes just one thing so the learner sees what it controls; the mistakes beginners most often make with it and how to spot them. Skip any step that doesn't apply to this subtopic, but never pad. Each section has a short "heading" (a plain label or question, not a slogan), a "body" of 2-5 short sentences (about 600 characters at most), and an "example": a tiny code snippet (at most about 8 lines, with a comment on each non-obvious line) plus a one-to-two-sentence explanation of what it shows, or null when the section is purely explanation. Each section also has a "check": one quick multiple-choice question (2-4 short choices, "correctIndex" the zero-based index of the right one, and a one-sentence "explanation" of why) that tests only what THAT section just taught and can be answered from reading it, with a plausible wrong answer built from a real beginner misconception - or null for a section where a question would be forced. Put the correct answer at varying positions. Do not repeat the same idea across sections.
+- "keyPoints": 3-6 one-line takeaways that recap the lesson.
+- "example": null (the examples live inside the sections).
+- "language": the language all the code examples are written in (null when the lesson has none).
+
+HARD CONSTRAINT: teach ONLY "${subtopic}". Do not pull in concepts, syntax, or APIs that belong to other topics, especially more advanced ones the learner hasn't reached yet; if a small example can't avoid something outside this subtopic, use it without explaining it in depth rather than teaching it. Assume nothing else about what the learner knows.`,
   };
 }
 

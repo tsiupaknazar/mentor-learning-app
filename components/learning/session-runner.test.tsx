@@ -42,6 +42,7 @@ const EVALUATION = {
   nextStep: "Use a closure variable.",
   detectedMisconception: null,
   detectedMisconceptionKey: null,
+  relatedLessonSection: null,
   mentorFollowUp: null,
 };
 
@@ -56,6 +57,7 @@ interface ScriptedEvaluation {
   after: number;
   achievements?: string[];
   misconception?: string;
+  relatedLessonSection?: string;
 }
 
 // Each /api/evaluate call consumes the next scripted verdict (the last one repeats).
@@ -103,7 +105,12 @@ beforeEach(() => {
       }
       const step = script[Math.min(evaluateCalls++, script.length - 1)]!;
       return jsonResponse({
-        evaluation: { ...EVALUATION, result: step.result, detectedMisconception: step.misconception ?? null },
+        evaluation: {
+          ...EVALUATION,
+          result: step.result,
+          detectedMisconception: step.misconception ?? null,
+          relatedLessonSection: step.relatedLessonSection ?? null,
+        },
         mastery: {},
         reward: {
           xpAwarded: step.xp,
@@ -566,7 +573,7 @@ describe("SessionRunner", () => {
   });
 
   describe("learn mode: the concept overview", () => {
-    const CONCEPT_KEY = "unsparing:draft:concept:topic1:en";
+    const CONCEPT_KEY = "unsparing:draft:concept:topic1:en:full"; // no level given, mastery 0: a new topic, so the full lesson
     const SNAPSHOT_KEY = "unsparing:draft:session:learn:topic1";
     const conceptFetches = () => vi.mocked(fetch).mock.calls.filter(([u]) => u === "/api/concept").length;
 
@@ -654,6 +661,150 @@ describe("SessionRunner", () => {
       await user.click(screen.getByRole("button", { name: "Start over" }));
       expect(await screen.findByText("Closures capture their scope.")).toBeInTheDocument();
       expect(conceptFetches()).toBe(1);
+    });
+
+    it("walks a beginner through a multi-step lesson before the first exercise, and keeps it reopenable", async () => {
+      const LESSON = {
+        ...CONCEPT,
+        sections: [
+          { heading: "What is a closure?", body: "A function plus the variables it can see.", example: null },
+        ],
+      };
+      localStorage.setItem(CONCEPT_KEY, JSON.stringify({ v: LESSON, t: Date.now() }));
+      const user = userEvent.setup();
+      renderRunner({ mode: "learn" });
+
+      await user.click(screen.getByRole("button", { name: "Start session" }));
+      expect(await screen.findByText("Step 1 of 3")).toBeInTheDocument();
+      expect(screen.queryByLabelText("code")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: /Next/ }));
+      expect(screen.getByRole("heading", { name: "What is a closure?" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: /Next/ }));
+      await user.click(screen.getByRole("button", { name: "Start practicing" }));
+
+      expect(await screen.findByLabelText("code")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Show theory" }));
+      // Reopened as one page, not the stepper.
+      expect(screen.getByRole("heading", { name: "What is a closure?" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Key takeaways" })).toBeInTheDocument();
+      expect(screen.queryByText(/Step \d of \d/)).not.toBeInTheDocument();
+    });
+
+    describe("choosing how much theory", () => {
+      const conceptBodies = () =>
+        vi
+          .mocked(fetch)
+          .mock.calls.filter(([u]) => u === "/api/concept")
+          .map(([, init]) => JSON.parse(init!.body as string));
+      const pressed = (name: string) => screen.getByRole("button", { name: new RegExp(name) }).getAttribute("aria-pressed");
+
+      it("pre-selects the full lesson for a beginner, and asks the server for it", async () => {
+        renderRunner({ mode: "learn", level: "beginner", masteryOverall: 30 });
+
+        expect(pressed("Full lesson")).toBe("true");
+        expect(pressed("Quick refresher")).toBe("false");
+        await waitFor(() => expect(conceptBodies()).toHaveLength(1));
+        expect(conceptBodies()[0]).toMatchObject({ subtopic: "Closures", depth: "full" });
+      });
+
+      it("pre-selects the quick refresher for someone with footing in the topic", async () => {
+        renderRunner({ mode: "learn", level: "junior", masteryOverall: 40 });
+
+        expect(pressed("Quick refresher")).toBe("true");
+        await waitFor(() => expect(conceptBodies()[0]).toMatchObject({ depth: "quick" }));
+      });
+
+      it("pre-selects the full lesson for anyone on a topic they've never attempted", () => {
+        renderRunner({ mode: "learn", level: "advanced", masteryOverall: 0 });
+        expect(pressed("Full lesson")).toBe("true");
+      });
+
+      it("fetches the other depth when the learner switches, and starts with that one", async () => {
+        const user = userEvent.setup();
+        renderRunner({ mode: "learn", level: "beginner", masteryOverall: 0 });
+        await waitFor(() => expect(conceptBodies()).toHaveLength(1));
+
+        await user.click(screen.getByRole("button", { name: /Quick refresher/ }));
+        await waitFor(() => expect(conceptBodies()).toHaveLength(2));
+        expect(conceptBodies()[1]).toMatchObject({ depth: "quick" });
+        expect(pressed("Quick refresher")).toBe("true");
+
+        await user.click(screen.getByRole("button", { name: "Start session" }));
+        expect(await screen.findByText("Closures capture their scope.")).toBeInTheDocument();
+        expect(conceptBodies()).toHaveLength(2); // the prefetch for the chosen depth was reused
+      });
+
+      it("keeps each depth's lesson cached separately", async () => {
+        const user = userEvent.setup();
+        renderRunner({ mode: "learn", level: "beginner", masteryOverall: 0 });
+        await waitFor(() => expect(localStorage.getItem("unsparing:draft:concept:topic1:en:full")).not.toBeNull());
+
+        await user.click(screen.getByRole("button", { name: /Quick refresher/ }));
+        await waitFor(() => expect(localStorage.getItem("unsparing:draft:concept:topic1:en:quick")).not.toBeNull());
+        expect(localStorage.getItem("unsparing:draft:concept:topic1:en:full")).not.toBeNull();
+      });
+
+      it("isn't offered when drilling in practice mode, which has no theory", async () => {
+        renderRunner({ mode: "practice", level: "beginner" });
+        await screen.findByRole("button", { name: "Start practicing" });
+        expect(screen.queryByText("Theory before you start")).not.toBeInTheDocument();
+      });
+    });
+
+    describe("tying feedback back to the lesson", () => {
+      const LESSON = {
+        ...CONCEPT,
+        sections: [
+          { heading: "What is a closure?", body: "A function plus the variables it can see.", example: null, check: null },
+          { heading: "Common mistakes", body: "Forgetting the variable lives on.", example: null, check: null },
+        ],
+      };
+      const evaluateBodies = () =>
+        vi
+          .mocked(fetch)
+          .mock.calls.filter(([u]) => u === "/api/evaluate")
+          .map(([, init]) => JSON.parse(init!.body as string));
+
+      async function reachFeedback(user: ReturnType<typeof userEvent.setup>) {
+        localStorage.setItem(CONCEPT_KEY, JSON.stringify({ v: LESSON, t: Date.now() }));
+        renderRunner({ mode: "learn" });
+        await user.click(screen.getByRole("button", { name: "Start session" }));
+        for (let i = 0; i < 4; i++) await user.click(await screen.findByRole("button", { name: /Next|Start practicing/ }));
+        await user.type(await screen.findByLabelText("code"), " x");
+        await user.click(screen.getByRole("button", { name: "Submit answer" }));
+      }
+
+      it("sends the lesson's headings with the answer, so the review can point at one", async () => {
+        script = [{ result: "incorrect", xp: 0, before: 10, after: 9 }];
+        await reachFeedback(userEvent.setup());
+        await screen.findByRole("button", { name: "Next exercise" });
+
+        expect(evaluateBodies()[0].lessonSections).toEqual(["What is a closure?", "Common mistakes"]);
+      });
+
+      it("sends none when there's no multi-section lesson (a quick concept, or practice)", async () => {
+        script = [{ result: "incorrect", xp: 0, before: 10, after: 9 }];
+        const user = userEvent.setup();
+        renderRunner({ mode: "practice" });
+        await user.click(screen.getByRole("button", { name: "Start practicing" }));
+        await user.type(await screen.findByLabelText("code"), " x");
+        await user.click(screen.getByRole("button", { name: "Submit answer" }));
+        await screen.findByRole("button", { name: "Next exercise" });
+
+        expect(evaluateBodies()[0].lessonSections).toBeUndefined();
+      });
+
+      it("reopens the lesson at the section the review names, from the feedback screen", async () => {
+        script = [{ result: "incorrect", xp: 0, before: 10, after: 9, relatedLessonSection: "Common mistakes" }];
+        const user = userEvent.setup();
+        await reachFeedback(user);
+
+        await user.click(await screen.findByRole("button", { name: "Revisit the lesson: Common mistakes" }));
+
+        expect(screen.getByRole("heading", { name: "Common mistakes" })).toBeInTheDocument();
+        expect(screen.getByRole("heading", { name: "What is a closure?" })).toBeInTheDocument();
+      });
     });
 
     it("brings back 'Show theory' when resuming, if the overview is still cached", async () => {

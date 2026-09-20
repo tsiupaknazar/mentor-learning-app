@@ -196,6 +196,12 @@ export interface Dictionary {
     reviewingAnswer: string;
     preparingExercise: string;
     startPracticingButton: string;
+    preparingLesson: string;
+    theoryDepthLabel: string;
+    depthFull: string;
+    depthFullHint: string;
+    depthQuick: string;
+    depthQuickHint: string;
     hideTheory: string;
     showTheory: string;
     reviseAndResubmit: string;
@@ -258,6 +264,21 @@ export interface Dictionary {
   };
   concept: {
     quickConcept: string;
+    lesson: string;
+    keyTakeaways: string;
+    stepOf: (step: number, total: number) => string;
+    back: string;
+    next: string;
+    quickCheck: string;
+    checkCorrect: string;
+    checkIncorrect: string;
+    tryIt: string;
+    reportProblem: string;
+    reportPlaceholder: string;
+    reportSend: string;
+    reportSent: string;
+    reportError: string;
+    tryItPreview: string;
   };
   feedback: {
     resultLabels: Record<"correct" | "partially_correct" | "incorrect", string>;
@@ -267,6 +288,7 @@ export interface Dictionary {
     hint: string;
     nextStep: string;
     conceptualGapDetected: string;
+    revisitLesson: (heading: string) => string;
     mentorFollowUp: string;
     followUpPlaceholder: string;
     respondButton: string;
@@ -668,6 +690,12 @@ const en: Dictionary = {
     reviewingAnswer: "Reviewing your answer\u2026",
     preparingExercise: "Preparing the next exercise\u2026",
     startPracticingButton: "Start practicing",
+    preparingLesson: "Preparing your lesson\u2026",
+    theoryDepthLabel: "Theory before you start",
+    depthFull: "Full lesson",
+    depthFullHint: "Step by step, assumes no background",
+    depthQuick: "Quick refresher",
+    depthQuickHint: "One short overview",
     hideTheory: "Hide theory",
     showTheory: "Show theory",
     reviseAndResubmit: "Revise and resubmit",
@@ -735,6 +763,21 @@ const en: Dictionary = {
   },
   concept: {
     quickConcept: "Quick concept",
+    lesson: "Lesson",
+    keyTakeaways: "Key takeaways",
+    stepOf: (step, total) => `Step ${step} of ${total}`,
+    back: "Back",
+    next: "Next",
+    quickCheck: "Quick check",
+    checkCorrect: "Correct.",
+    checkIncorrect: "Not quite.",
+    tryIt: "Try it yourself",
+    reportProblem: "Something unclear or wrong?",
+    reportPlaceholder: "What was confusing or incorrect?",
+    reportSend: "Send",
+    reportSent: "Thanks \u2014 that helps us fix the lesson.",
+    reportError: "Could not send that. Try again.",
+    tryItPreview: "Live preview",
   },
   feedback: {
     resultLabels: {
@@ -748,6 +791,7 @@ const en: Dictionary = {
     hint: "Hint",
     nextStep: "Next step",
     conceptualGapDetected: "Conceptual gap detected",
+    revisitLesson: (heading) => `Revisit the lesson: ${heading}`,
     mentorFollowUp: "Mentor follow-up",
     followUpPlaceholder: "Answer the mentor's question\u2026",
     respondButton: "Respond",
@@ -1184,6 +1228,12 @@ const uk: Dictionary = {
     reviewingAnswer: "Перевіряємо вашу відповідь…",
     preparingExercise: "Готуємо наступну вправу…",
     startPracticingButton: "Почати тренування",
+    preparingLesson: "Готуємо ваш урок…",
+    theoryDepthLabel: "Теорія перед початком",
+    depthFull: "Повний урок",
+    depthFullHint: "Крок за кроком, без вимог до підготовки",
+    depthQuick: "Короткий повтор",
+    depthQuickHint: "Один короткий огляд",
     hideTheory: "Сховати теорію",
     showTheory: "Показати теорію",
     reviseAndResubmit: "Виправити й надіслати знову",
@@ -1251,6 +1301,21 @@ const uk: Dictionary = {
   },
   concept: {
     quickConcept: "Коротка концепція",
+    lesson: "Урок",
+    keyTakeaways: "Головне",
+    stepOf: (step, total) => `Крок ${step} з ${total}`,
+    back: "Назад",
+    next: "Далі",
+    quickCheck: "Швидка перевірка",
+    checkCorrect: "Правильно.",
+    checkIncorrect: "Не зовсім.",
+    tryIt: "Спробуйте самі",
+    reportProblem: "Щось незрозуміло чи неправильно?",
+    reportPlaceholder: "Що було незрозумілим або хибним?",
+    reportSend: "Надіслати",
+    reportSent: "Дякуємо — це допоможе виправити урок.",
+    reportError: "Не вдалося надіслати. Спробуйте ще раз.",
+    tryItPreview: "Попередній перегляд",
   },
   feedback: {
     resultLabels: {
@@ -1264,6 +1329,7 @@ const uk: Dictionary = {
     hint: "Підказка",
     nextStep: "Наступний крок",
     conceptualGapDetected: "Виявлено концептуальну прогалину",
+    revisitLesson: (heading) => `Перечитати урок: ${heading}`,
     mentorFollowUp: "Уточнення від ментора",
     followUpPlaceholder: "Дайте відповідь на запитання ментора…",
     respondButton: "Відповісти",

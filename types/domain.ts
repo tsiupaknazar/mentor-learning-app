@@ -17,6 +17,12 @@ export type LearningGoal =
   | "production_skills"
   | "master_topic";
 
+/**
+ * How much theory precedes a topic's exercises. "full" is the guided,
+ * multi-section lesson for someone new to the material; "quick" is the short
+ * refresher for someone who already has footing.
+ */
+export type ConceptDepth = "quick" | "full";
 export type LearningStyle = "more_practice" | "balanced" | "more_theory";
 
 export type DailyTime = "15min" | "30min" | "1hr" | "2hr_plus";

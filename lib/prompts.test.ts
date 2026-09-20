@@ -179,6 +179,113 @@ describe("buildConceptPrompt", () => {
     const { prompt } = buildConceptPrompt(ctx({ learningStyle: "balanced" }), "JS", "closures");
     expect(prompt).toContain("not a lecture");
   });
+
+  it("keeps the quick concept, with no lesson sections, above beginner level", () => {
+    for (const level of ["junior", "intermediate", "advanced"] as const) {
+      const { system, prompt } = buildConceptPrompt(ctx({ level }), "JS", "closures");
+      expect(system).toContain("NOT a full lesson");
+      expect(prompt).toContain('Set "sections" to an empty array');
+    }
+  });
+
+  it("follows the requested depth over the learner's level", () => {
+    const full = buildConceptPrompt(ctx({ level: "advanced" }), "JS", "closures", "full");
+    expect(full.system).toContain("ABSOLUTE BEGINNER");
+    const quick = buildConceptPrompt(ctx({ level: "beginner" }), "JS", "closures", "quick");
+    expect(quick.system).toContain("NOT a full lesson");
+  });
+
+  it("describes the learner by level and style only, so the shared result holds nothing personal", () => {
+    const personal = ctx({
+      level: "beginner",
+      weakTopics: ["SECRET_WEAK_TOPIC"],
+      strongTopics: ["SECRET_STRONG_TOPIC"],
+      recurringMistakes: ["SECRET_MISTAKE"],
+      recentPerformance: 73,
+      pathSubject: "SECRET_SUBJECT",
+    });
+    for (const depth of ["quick", "full"] as const) {
+      const { prompt } = buildConceptPrompt(personal, "JS", "closures", depth);
+      expect(prompt).not.toMatch(/SECRET|73/);
+    }
+  });
+
+  describe("for a beginner", () => {
+    it("asks for a self-check on each section, and a language for the examples", () => {
+      const { prompt } = buildConceptPrompt(ctx({ level: "beginner" }), "HTML", "Headings");
+      expect(prompt).toContain('"check"');
+      expect(prompt).toContain("correctIndex");
+      expect(prompt).toContain('"language"');
+    });
+
+    it("asks for a guided multi-section lesson that assumes no prior knowledge", () => {
+      const { system, prompt } = buildConceptPrompt(ctx({ level: "beginner" }), "HTML", "Headings");
+      expect(system).toContain("ABSOLUTE BEGINNER");
+      expect(system).not.toContain("NOT a full lesson");
+      expect(prompt).toContain('"sections": 4-5 short sections');
+      expect(prompt).toContain("teach ONLY \"Headings\"");
+      expect(prompt).not.toContain('Set "sections" to an empty array');
+    });
+
+    it("scales the number of sections with the learning style", () => {
+      const sections = (learningStyle: "more_practice" | "balanced" | "more_theory") =>
+        buildConceptPrompt(ctx({ level: "beginner", learningStyle }), "JS", "closures").prompt;
+      expect(sections("more_practice")).toContain("3-4 short sections");
+      expect(sections("balanced")).toContain("4-5 short sections");
+      expect(sections("more_theory")).toContain("5-6 short sections");
+    });
+
+    it("still writes in the learner's language", () => {
+      const { system } = buildConceptPrompt(ctx({ level: "beginner", locale: "uk" }), "JS", "closures");
+      expect(system).toContain("LANGUAGE:");
+      expect(system).toContain("Ukrainian");
+    });
+  });
+});
+
+describe("buildExercisePrompt: learning style and scaffolding", () => {
+  const build = (overrides = {}, scaffold: 0 | 1 | null = null) =>
+    buildExercisePrompt(ctx(overrides), "JS", "closures", "easy", [], null, scaffold).prompt;
+
+  it("leans toward reasoning exercises for more_theory and hands-on ones for more_practice", () => {
+    expect(build({ learningStyle: "more_theory" })).toContain("explain_code");
+    expect(build({ learningStyle: "more_theory" })).toContain("understanding over drilling");
+    expect(build({ learningStyle: "more_practice" })).toContain("hands-on practice");
+  });
+
+  it("adds no nudge for balanced", () => {
+    const prompt = build({ learningStyle: "balanced" });
+    expect(prompt).not.toContain("understanding over drilling");
+    expect(prompt).not.toContain("hands-on practice");
+  });
+
+  it("nudges the practice-problem batch the same way", () => {
+    const { prompt } = buildPracticeProblemSetPrompt(
+      ctx({ learningStyle: "more_practice" }),
+      [{ title: "Closures", language: null }],
+      { easy: 1, medium: 1, hard: 1 },
+      []
+    );
+    expect(prompt).toContain("hands-on practice");
+  });
+
+  it("scaffolds a first exercise as a worked example, and a second as a skeleton", () => {
+    expect(build({}, 0)).toContain("ONE clearly marked blank");
+    expect(build({}, 1)).toContain("fade the support");
+    expect(build({}, null)).not.toContain("SCAFFOLDING");
+  });
+});
+
+describe("buildEvaluationPrompt: lesson sections", () => {
+  it("offers the headings to trace a mistake back to", () => {
+    const { prompt } = buildEvaluationPrompt(ctx(), EXERCISE, "answer", ["What is a tag?"]);
+    expect(prompt).toContain('["What is a tag?"]');
+    expect(prompt).toContain("EXACTLY as written");
+  });
+
+  it("tells the model there is nothing to point at when no lesson was shown", () => {
+    expect(buildEvaluationPrompt(ctx(), EXERCISE, "answer").prompt).toContain('Set "relatedLessonSection" to null');
+  });
 });
 
 describe("buildProjectPlanPrompt", () => {

@@ -238,6 +238,10 @@ export const evaluationSchema = z.object({
   // language, silently splitting one recurring mistake into duplicates.
   // Null whenever detectedMisconception is null.
   detectedMisconceptionKey: looseNullable(z.string().min(1).max(60)),
+  // The heading of the lesson section (if any were offered to the model) that
+  // covers the idea this answer got wrong, so the UI can offer "Revisit: ...".
+  // The route nulls it unless it matches a real heading.
+  relatedLessonSection: looseNullable(z.string().max(100)),
   mentorFollowUp: looseNullable(z.string().max(400)),
 });
 export type Evaluation = z.infer<typeof evaluationSchema>;
@@ -393,12 +397,49 @@ export const conceptExampleSchema = z.object({
   explanation: z.string().min(1).max(500),
 });
 
+// One step of a beginner's guided lesson. Kept small (a heading, a short body,
+// at most one tiny example) so a lesson reads as a sequence of bite-sized
+// pages rather than the "wall of text" spec section 6 warns against.
+// A one-question, ungraded self-check on a section. If the model produces a
+// malformed one (e.g. correctIndex past the last choice) it's dropped to null
+// rather than failing the whole lesson - the check is a bonus, not the lesson.
+export const conceptCheckSchema = z
+  .object({
+    question: z.string().min(1).max(300),
+    choices: z.array(z.string().min(1).max(200)).min(2).max(4),
+    correctIndex: z.number().int().min(0).max(3),
+    explanation: z.string().min(1).max(400),
+  })
+  .refine((c) => c.correctIndex < c.choices.length);
+export type ConceptCheck = z.infer<typeof conceptCheckSchema>;
+
+export const conceptSectionSchema = z.object({
+  heading: z.string().min(1).max(100),
+  body: z.string().min(1).max(1000),
+  example: looseNullable(conceptExampleSchema),
+  check: conceptCheckSchema
+    .nullish()
+    .catch(null)
+    .transform((v) => v ?? null),
+});
+export type ConceptSection = z.infer<typeof conceptSectionSchema>;
+
 export const conceptSchema = z.object({
   topic: z.string().min(1),
   subtopic: z.string().min(1),
   // Deliberately short — spec section 6 explicitly warns against "walls of text".
+  // For a beginner's lesson this is the opening ("what is this and why care"),
+  // with the step-by-step teaching in `sections`.
   explanation: z.string().min(1).max(1200),
   keyPoints: z.array(z.string().min(1).max(200)).min(2).max(6),
   example: looseNullable(conceptExampleSchema),
+  // Which language the code examples are written in, for syntax highlighting
+  // (an HTML/CSS lesson shouldn't be colored as JavaScript). Absent on
+  // concepts cached before this field existed.
+  language: programmingLanguageSchema.nullish(),
+  // The beginner lesson. Empty/absent for everyone else (the quick concept
+  // above is the whole thing), and absent on concepts cached before this
+  // field existed - hence optional rather than defaulted.
+  sections: z.array(conceptSectionSchema).max(8).optional(),
 });
 export type Concept = z.infer<typeof conceptSchema>;

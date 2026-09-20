@@ -9,6 +9,7 @@ import { requireCurrentUser } from "@/lib/current-user";
 import { convexMutation, convexQuery } from "@/lib/convex-server";
 import { getLearnerContext } from "@/lib/learner-context";
 import { pickDifficulty } from "@/lib/difficulty";
+import { pickScaffolding } from "@/lib/scaffolding";
 import { resolveTopicLanguage } from "@/lib/topic-language";
 import { handleRouteError } from "@/lib/route-utils";
 import { api } from "@/convex/_generated/api";
@@ -66,7 +67,8 @@ export async function POST(req: Request) {
       topicData.topic.title,
       difficulty,
       recentTitles,
-      requiredLanguage
+      requiredLanguage,
+      pickScaffolding(learnerContext.level, topicData.progress?.attemptsCount ?? 0, body.challengeMode)
     );
 
     const exercise = await generateStructured({

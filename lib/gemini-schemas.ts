@@ -167,6 +167,7 @@ export const evaluationGeminiSchema: Schema = {
     nextStep: { type: Type.STRING },
     detectedMisconception: { type: Type.STRING, nullable: true },
     detectedMisconceptionKey: { type: Type.STRING, nullable: true },
+    relatedLessonSection: { type: Type.STRING, nullable: true },
     mentorFollowUp: { type: Type.STRING, nullable: true },
   },
   required: [
@@ -179,6 +180,7 @@ export const evaluationGeminiSchema: Schema = {
     "nextStep",
     "detectedMisconception",
     "detectedMisconceptionKey",
+    "relatedLessonSection",
     "mentorFollowUp",
   ],
 };
@@ -202,6 +204,16 @@ export const hintGeminiSchema: Schema = {
   required: ["level", "text"],
 };
 
+const conceptExampleGeminiSchema: Schema = {
+  type: Type.OBJECT,
+  nullable: true,
+  properties: {
+    code: { type: Type.STRING },
+    explanation: { type: Type.STRING },
+  },
+  required: ["code", "explanation"],
+};
+
 export const conceptGeminiSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -209,17 +221,34 @@ export const conceptGeminiSchema: Schema = {
     subtopic: { type: Type.STRING },
     explanation: { type: Type.STRING },
     keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
-    example: {
-      type: Type.OBJECT,
-      nullable: true,
-      properties: {
-        code: { type: Type.STRING },
-        explanation: { type: Type.STRING },
+    example: conceptExampleGeminiSchema,
+    language: { type: Type.STRING, enum: PROGRAMMING_LANGUAGES, nullable: true },
+    // A beginner's guided lesson; an empty array for every other level.
+    sections: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          heading: { type: Type.STRING },
+          body: { type: Type.STRING },
+          example: conceptExampleGeminiSchema,
+          check: {
+            type: Type.OBJECT,
+            nullable: true,
+            properties: {
+              question: { type: Type.STRING },
+              choices: { type: Type.ARRAY, items: { type: Type.STRING } },
+              correctIndex: { type: Type.INTEGER },
+              explanation: { type: Type.STRING },
+            },
+            required: ["question", "choices", "correctIndex", "explanation"],
+          },
+        },
+        required: ["heading", "body", "example", "check"],
       },
-      required: ["code", "explanation"],
     },
   },
-  required: ["topic", "subtopic", "explanation", "keyPoints", "example"],
+  required: ["topic", "subtopic", "explanation", "keyPoints", "example", "language", "sections"],
 };
 
 /**

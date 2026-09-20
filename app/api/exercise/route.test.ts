@@ -130,4 +130,52 @@ describe("POST /api/exercise", () => {
     // mastery=40, attemptsCount=3 -> base "medium" -> challengeMode bumps to "hard"
     expect(promptArg.prompt).toContain("Target difficulty: hard");
   });
+
+  describe("scaffolding a beginner's first exercises", () => {
+    const asBeginner = (attemptsCount: number) => {
+      getLearnerContextMock.mockResolvedValue({ ...FAKE_LEARNER_CONTEXT, level: "beginner" });
+      convexQueryMock.mockImplementation((_query, args) => {
+        if ("limit" in args) return Promise.resolve([]);
+        return Promise.resolve({ ...TOPIC_DATA, progress: { mastery: { overall: 0 }, attemptsCount } });
+      });
+    };
+    const promptOf = () => generateStructuredMock.mock.calls[0]![0].prompt as string;
+
+    it("makes the very first exercise a worked example with one blank", async () => {
+      asBeginner(0);
+      await POST(jsonRequest(VALID_BODY));
+      expect(promptOf()).toContain("very first exercise");
+      expect(promptOf()).toContain("ONE clearly marked blank");
+    });
+
+    it("fades the support on the second, then stops", async () => {
+      asBeginner(1);
+      await POST(jsonRequest(VALID_BODY));
+      expect(promptOf()).toContain("fade the support");
+
+      generateStructuredMock.mockClear();
+      asBeginner(2);
+      await POST(jsonRequest(VALID_BODY));
+      expect(promptOf()).not.toContain("SCAFFOLDING");
+    });
+
+    it("never scaffolds someone who isn't a beginner, or a harder variation", async () => {
+      convexQueryMock.mockImplementation((_query, args) =>
+        Promise.resolve("limit" in args ? [] : { ...TOPIC_DATA, progress: { mastery: { overall: 0 }, attemptsCount: 0 } })
+      );
+      await POST(jsonRequest(VALID_BODY)); // junior context
+      expect(promptOf()).not.toContain("SCAFFOLDING");
+
+      generateStructuredMock.mockClear();
+      asBeginner(0);
+      await POST(jsonRequest({ ...VALID_BODY, challengeMode: true }));
+      expect(promptOf()).not.toContain("SCAFFOLDING");
+    });
+  });
+
+  it("nudges the exercise types by the learner's learning style", async () => {
+    getLearnerContextMock.mockResolvedValue({ ...FAKE_LEARNER_CONTEXT, learningStyle: "more_theory" });
+    await POST(jsonRequest(VALID_BODY));
+    expect(generateStructuredMock.mock.calls[0]![0].prompt).toContain("prefers understanding over drilling");
+  });
 });
