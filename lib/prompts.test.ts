@@ -212,11 +212,32 @@ describe("buildConceptPrompt", () => {
     }
   });
 
-  it("follows the requested depth over the learner's level", () => {
+  it("follows the requested depth over the learner's level, but keeps the level's own framing", () => {
     const full = buildConceptPrompt(ctx({ level: "advanced" }), "JS", "closures", "full");
-    expect(full.system).toContain("ABSOLUTE BEGINNER");
+    expect(full.system).not.toContain("NOT a full lesson");
+    expect(full.system).not.toContain("ABSOLUTE BEGINNER");
+    expect(full.system).toContain("skip remedial explanation");
     const quick = buildConceptPrompt(ctx({ level: "beginner" }), "JS", "closures", "quick");
     expect(quick.system).toContain("NOT a full lesson");
+    expect(quick.system).toContain("may have never written code");
+  });
+
+  it("pitches the quick concept differently for each level", () => {
+    const guidanceFor = (level: "beginner" | "junior" | "intermediate" | "advanced") =>
+      buildConceptPrompt(ctx({ level }), "JS", "closures").system;
+    expect(guidanceFor("beginner")).toContain("may have never written code");
+    expect(guidanceFor("junior")).toContain("shaky on fundamentals");
+    expect(guidanceFor("intermediate")).toContain("assume solid fundamentals");
+    expect(guidanceFor("advanced")).toContain("skip remedial explanation");
+  });
+
+  it("pitches a full lesson differently for each level, not just beginner", () => {
+    const guidanceFor = (level: "beginner" | "junior" | "intermediate" | "advanced") =>
+      buildConceptPrompt(ctx({ level }), "JS", "closures", "full").system;
+    expect(guidanceFor("junior")).toContain("shaky on fundamentals");
+    expect(guidanceFor("junior")).not.toContain("ABSOLUTE BEGINNER");
+    expect(guidanceFor("intermediate")).toContain("assume solid fundamentals");
+    expect(guidanceFor("advanced")).toContain("skip remedial explanation");
   });
 
   it("describes the learner by level and style only, so the shared result holds nothing personal", () => {

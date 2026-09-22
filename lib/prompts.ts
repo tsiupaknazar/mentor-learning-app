@@ -310,7 +310,7 @@ export function buildConceptPrompt(
   subtopic: string,
   depth: ConceptDepth = ctx.level === "beginner" ? "full" : "quick"
 ) {
-  if (depth === "full") return buildBeginnerLessonPrompt(ctx, topic, subtopic);
+  if (depth === "full") return buildFullLessonPrompt(ctx, topic, subtopic);
 
   const lengthGuidance =
     ctx.learningStyle === "more_theory"
@@ -319,7 +319,7 @@ export function buildConceptPrompt(
         ? "The learner prefers more practice — keep this genuinely brief; they want to get to exercises quickly."
         : "Keep this concise — a short paragraph, not a lecture.";
   return {
-    system: `You write short "quick concept" explanations for a practice-first programming platform. This is NOT a full lesson — it's the minimum context a learner needs before attempting a problem. Never write a wall of text. Prefer one concrete example over multiple abstract ones. Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
+    system: `You write short "quick concept" explanations for a practice-first programming platform. This is NOT a full lesson — it's the minimum context a learner needs before attempting a problem. Never write a wall of text. Prefer one concrete example over multiple abstract ones. ${lessonLevelGuidance(ctx.level)} Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
     prompt: `Learner: ${JSON.stringify({ level: ctx.level, learningStyle: ctx.learningStyle })}
 Topic: ${topic}
 Subtopic: ${subtopic}
@@ -332,33 +332,54 @@ Set "language" to the language the example is written in (null when there is no 
 }
 
 /**
- * The quick concept assumes the learner already has the surrounding
- * vocabulary, which an absolute beginner doesn't - one short paragraph leaves
- * them with nothing to attempt the exercises with. So for level "beginner"
- * the same call produces a short guided lesson instead: several small
- * sections, each teaching one idea, in the order a good tutor would.
+ * How much background a lesson can assume, keyed on the learner's chosen
+ * level rather than their depth pick — a junior who asks for the "full"
+ * lesson still isn't an absolute beginner, and an advanced learner who asks
+ * for "quick" still wants an advanced-flavored brief, not a beginner one.
+ * Shared between the quick concept and the full lesson below so the two
+ * stay consistent about who they think they're talking to.
  */
-function buildBeginnerLessonPrompt(ctx: ConceptContext, topic: string, subtopic: string) {
+function lessonLevelGuidance(level: SkillLevel): string {
+  switch (level) {
+    case "beginner":
+      return "This learner is an ABSOLUTE BEGINNER who may have never written code: explain any technical term the moment you use it, and prefer everyday analogies to jargon.";
+    case "junior":
+      return "This learner already writes small programs but is still shaky on fundamentals: you can assume basic syntax and control flow, but don't assume they've met this specific concept before, and call out the mistake juniors most often make with it.";
+    case "intermediate":
+      return "This learner already builds real features: assume solid fundamentals and comfort with common patterns, spend the words on the mechanism itself and when to reach for it over the obvious alternative, and note one subtlety that trips people up at this level.";
+    case "advanced":
+      return "This learner is experienced: assume strong fundamentals and skip remedial explanation entirely — go straight to the mechanism, and mention a real trade-off, edge case, or performance implication worth knowing.";
+  }
+}
+
+/**
+ * The guided, multi-section lesson for someone requesting "full" depth. A
+ * beginner defaults into this; anyone else can still pick it from the intro
+ * screen, so its framing follows `lessonLevelGuidance` rather than assuming
+ * "full" always means an absolute beginner.
+ */
+function buildFullLessonPrompt(ctx: ConceptContext, topic: string, subtopic: string) {
   const sectionCount =
     ctx.learningStyle === "more_theory"
       ? "5-6"
       : ctx.learningStyle === "more_practice"
         ? "3-4"
         : "4-5";
+  const audience = lessonLevelGuidance(ctx.level);
   return {
-    system: `You are a patient programming tutor teaching an ABSOLUTE BEGINNER who may have never written code, on a platform where they learn by doing. Before their first exercise on a topic you give them a short guided lesson: enough that they can genuinely attempt the exercises, but split into small bite-sized sections, never a wall of text. Assume nothing: the first time you use any technical term, say what it means in plain words. Prefer everyday analogies to jargon. Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
+    system: `You are a patient programming tutor giving a learner a short guided lesson before their exercises on a topic: enough that they can genuinely attempt the exercises, but split into small bite-sized sections, never a wall of text. ${audience} Return ONLY JSON matching the required schema.${languageInstruction(ctx.locale)}`,
     prompt: `Learner: ${JSON.stringify({ level: ctx.level, learningStyle: ctx.learningStyle })}
 Topic: ${topic}
 Subtopic: ${subtopic}
 
-Write a beginner's lesson on "${subtopic}" (within "${topic}"):
-- "explanation": the opening, 2-4 plain sentences on what "${subtopic}" is and why anyone would need it. Use an everyday analogy if one fits.
-- "sections": ${sectionCount} short sections, in this order of ideas: the core idea in small pieces; the smallest possible code example, explained step by step; a second example that changes just one thing so the learner sees what it controls; the mistakes beginners most often make with it and how to spot them. Skip any step that doesn't apply to this subtopic, but never pad. Each section has a short "heading" (a plain label or question, not a slogan), a "body" of 2-5 short sentences (about 600 characters at most), and an "example": a tiny code snippet (at most about 8 lines, with a comment on each non-obvious line) plus a one-to-two-sentence explanation of what it shows, or null when the section is purely explanation. Each section also has a "check": one quick multiple-choice question (2-4 short choices, "correctIndex" the zero-based index of the right one, and a one-sentence "explanation" of why) that tests only what THAT section just taught and can be answered from reading it, with a plausible wrong answer built from a real beginner misconception - or null for a section where a question would be forced. Put the correct answer at varying positions. Do not repeat the same idea across sections.
+Write a lesson on "${subtopic}" (within "${topic}") pitched at this learner's level:
+- "explanation": the opening, 2-4 plain sentences on what "${subtopic}" is and why anyone would need it.${ctx.level === "beginner" ? " Use an everyday analogy if one fits." : ""}
+- "sections": ${sectionCount} short sections, in this order of ideas: the core idea in small pieces; the smallest possible code example, explained step by step; a second example that changes just one thing so the learner sees what it controls; the mistakes learners at this level most often make with it and how to spot them. Skip any step that doesn't apply to this subtopic, but never pad. Each section has a short "heading" (a plain label or question, not a slogan), a "body" of 2-5 short sentences (about 600 characters at most), and an "example": a tiny code snippet (at most about 8 lines, with a comment on each non-obvious line) plus a one-to-two-sentence explanation of what it shows, or null when the section is purely explanation. Each section also has a "check": one quick multiple-choice question (2-4 short choices, "correctIndex" the zero-based index of the right one, and a one-sentence "explanation" of why) that tests only what THAT section just taught and can be answered from reading it, with a plausible wrong answer built from a real misconception someone at this level would have - or null for a section where a question would be forced. Put the correct answer at varying positions. Do not repeat the same idea across sections.
 - "keyPoints": 3-6 one-line takeaways that recap the lesson.
 - "example": null (the examples live inside the sections).
 - "language": the language all the code examples are written in (null when the lesson has none).
 
-HARD CONSTRAINT: teach ONLY "${subtopic}". Do not pull in concepts, syntax, or APIs that belong to other topics, especially more advanced ones the learner hasn't reached yet; if a small example can't avoid something outside this subtopic, use it without explaining it in depth rather than teaching it. Assume nothing else about what the learner knows.`,
+HARD CONSTRAINT: teach ONLY "${subtopic}". Do not pull in concepts, syntax, or APIs that belong to other topics, especially more advanced ones the learner hasn't reached yet; if a small example can't avoid something outside this subtopic, use it without explaining it in depth rather than teaching it.`,
   };
 }
 
