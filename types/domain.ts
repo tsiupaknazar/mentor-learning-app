@@ -7,7 +7,16 @@
 
 export type SkillLevel = "beginner" | "junior" | "intermediate" | "advanced";
 
-export type ProgrammingLanguage = "javascript" | "typescript" | "html" | "css" | "python" | "sql";
+export type ProgrammingLanguage = "javascript" | "typescript" | "html" | "css" | "python" | "sql" | "java";
+
+/**
+ * The track a learner picked at registration (or later, in Settings). Drives
+ * which technologies are suggested when starting a learning path — see
+ * `presetTopicsBySpecialty` in lib/i18n/dictionaries.ts. Purely a curation
+ * hint: the topic itself is still free text, so picking a specialty never
+ * restricts what a learner can actually study (see "Custom topic…").
+ */
+export type Specialty = "frontend" | "backend" | "mobile" | "data" | "general";
 
 export type LearningGoal =
   | "first_job"

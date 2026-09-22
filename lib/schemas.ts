@@ -69,6 +69,7 @@ export const programmingLanguageSchema = z.enum([
   "css",
   "python",
   "sql",
+  "java",
 ]);
 
 export const diagnosticQuestionTypeSchema = z.enum([

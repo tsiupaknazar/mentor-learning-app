@@ -19,6 +19,7 @@ export default async function SettingsPage() {
         learningGoal={user.learningGoal}
         learningStyle={user.learningStyle}
         dailyTime={user.dailyTime}
+        specialty={user.specialty ?? "general"}
       />
     </div>
   );

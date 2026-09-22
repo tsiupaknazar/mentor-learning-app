@@ -22,7 +22,8 @@ const programmingLanguage = v.union(
   v.literal("html"),
   v.literal("css"),
   v.literal("python"),
-  v.literal("sql")
+  v.literal("sql"),
+  v.literal("java")
 );
 
 /** Persists a Gemini-generated project plan (already validated by `projectPlanSchema` in the API route). */

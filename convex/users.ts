@@ -28,6 +28,13 @@ const dailyTime = v.union(
   v.literal("1hr"),
   v.literal("2hr_plus")
 );
+const specialty = v.union(
+  v.literal("frontend"),
+  v.literal("backend"),
+  v.literal("mobile"),
+  v.literal("data"),
+  v.literal("general")
+);
 
 /** Idempotent: called from the client right after Clerk auth resolves. */
 export const getOrCreateUser = mutation({
@@ -74,15 +81,22 @@ export const completeOnboarding = mutation({
     learningGoal,
     learningStyle,
     dailyTime,
+    specialty: v.optional(specialty),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.userId, {
+    const patch: Record<string, unknown> = {
       level: args.level,
       learningGoal: args.learningGoal,
       learningStyle: args.learningStyle,
       dailyTime: args.dailyTime,
       onboardingComplete: true,
-    });
+    };
+    // Only overwrite the stored specialty when this call actually carries
+    // one (finishOnboarding always sends it; a new-path flow reusing this
+    // mutation to just update level does not, and must not blow away the
+    // learner's existing specialty).
+    if (args.specialty !== undefined) patch.specialty = args.specialty;
+    await ctx.db.patch(args.userId, patch);
   },
 });
 
@@ -105,6 +119,7 @@ export const updatePreferences = mutation({
     learningStyle: v.optional(learningStyle),
     dailyTime: v.optional(dailyTime),
     locale: v.optional(v.union(v.literal("en"), v.literal("uk"))),
+    specialty: v.optional(specialty),
   },
   handler: async (ctx, args) => {
     const { userId, ...patch } = args;

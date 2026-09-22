@@ -8,7 +8,7 @@ import { ChevronDown } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { DiagnosticSet, KnowledgeProfile } from "@/lib/schemas";
-import type { DailyTime, LearningGoal, LearningStyle, Locale, SkillLevel } from "@/types/domain";
+import type { DailyTime, LearningGoal, LearningStyle, Locale, Specialty, SkillLevel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,8 +54,13 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
   const TIMES: { value: DailyTime; label: string }[] = (
     Object.keys(t.onboarding.times) as DailyTime[]
   ).map((value) => ({ value, label: t.onboarding.times[value] }));
-  const PRESET_TOPICS = t.onboarding.presetTopics;
-  const CUSTOM_TOPIC_SENTINEL = PRESET_TOPICS[PRESET_TOPICS.length - 1]!; // "Custom topic…" localized
+  const SPECIALTIES: { value: Specialty; label: string; hint: string }[] = (
+    Object.keys(t.onboarding.specialties) as Specialty[]
+  ).map((value) => ({
+    value,
+    label: t.onboarding.specialties[value],
+    hint: t.onboarding.specialtyHints[value],
+  }));
   const LOCALES: { value: Locale; short: string }[] = [
     { value: "en", short: "EN" },
     { value: "uk", short: "UK" },
@@ -69,8 +74,21 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
   const [level, setLevel] = useState<SkillLevel | "not_sure">("beginner");
   const [style, setStyle] = useState<LearningStyle>("balanced");
   const [time, setTime] = useState<DailyTime>("30min");
+  const [specialty, setSpecialty] = useState<Specialty>("frontend");
+  const PRESET_TOPICS = t.onboarding.presetTopicsBySpecialty[specialty];
+  const CUSTOM_TOPIC_SENTINEL = PRESET_TOPICS[PRESET_TOPICS.length - 1]!; // "Custom topic…" localized
   const [topicChoice, setTopicChoice] = useState(PRESET_TOPICS[0] ?? "JavaScript");
   const [customTopic, setCustomTopic] = useState("");
+
+  // Switching the track changes which preset topics are on offer - reset to
+  // that track's first suggestion rather than leaving a stale selection
+  // (or a custom topic typed for a different track) in place.
+  function handleSpecialtyChange(next: Specialty) {
+    setSpecialty(next);
+    const nextTopics = t.onboarding.presetTopicsBySpecialty[next];
+    setTopicChoice(nextTopics[0] ?? "JavaScript");
+    setCustomTopic("");
+  }
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticSet | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -139,6 +157,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
         learningGoal: goal,
         learningStyle: style,
         dailyTime: time,
+        specialty,
       });
 
       await apiFetch("/api/learning-path", { topic: resolvedTopic, knowledgeProfile: profile });
@@ -148,6 +167,7 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
         goal,
         learningStyle: style,
         dailyTime: time,
+        specialty,
         topic: resolvedTopic,
       });
 
@@ -230,6 +250,30 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
       <div>
         <p className="font-mono text-xs uppercase tracking-widest text-accent">{t.onboarding.setUp}</p>
         <h1 className="mt-1 text-2xl font-semibold">{t.onboarding.title}</h1>
+      </div>
+
+      {/* Track comes first: it decides which technologies get suggested below. */}
+      <div className="space-y-2">
+        <Label>{t.onboarding.specialtyLabel}</Label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {SPECIALTIES.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => handleSpecialtyChange(s.value)}
+              aria-pressed={specialty === s.value}
+              className={cn(
+                "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                specialty === s.value
+                  ? "border-accent bg-accent/10 text-foreground"
+                  : "border-border bg-surface hover:bg-muted"
+              )}
+            >
+              <span className="block font-medium">{s.label}</span>
+              <span className="block text-xs text-muted-foreground">{s.hint}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* What actually shapes the path comes first: the topic and where the learner starts. */}

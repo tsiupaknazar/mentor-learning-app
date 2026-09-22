@@ -215,6 +215,28 @@ describe("OnboardingFlow form", () => {
   });
 });
 
+describe("OnboardingFlow: track picker", () => {
+  it("defaults to Frontend and narrows the topic list to the chosen track", async () => {
+    const user = userEvent.setup();
+    render(<OnboardingFlow userId={"user1" as never} />);
+
+    expect(screen.getByRole("button", { name: /Frontend/ })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: /Backend/ }));
+    expect(screen.getByRole("button", { name: /Backend/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Frontend/ })).toHaveAttribute("aria-pressed", "false");
+
+    // Switching tracks reset the topic to that track's first preset (Node.js).
+    const [topicSelect] = screen.getAllByRole("combobox");
+    expect(topicSelect).toHaveTextContent("Node.js");
+
+    await user.click(screen.getByRole("button", { name: "Generate my learning path" }));
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/dashboard"));
+    expect(completeOnboardingMock.mock.calls[0]![0]).toMatchObject({ specialty: "backend" });
+    expect(bodyOf("/api/learning-path").topic).toBe("Node.js");
+  });
+});
+
 describe("OnboardingFlow: what each level means", () => {
   it("explains the selected level under the picker, and points a first-timer away from the quiz", async () => {
     const user = userEvent.setup();

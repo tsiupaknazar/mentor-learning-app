@@ -3,7 +3,7 @@ import { convexQuery } from "@/lib/convex-server";
 import { api } from "@/convex/_generated/api";
 import { NewPathFlow } from "@/components/learning/new-path-flow";
 import { suggestNextTopics } from "@/lib/topic-progression";
-import type { LearningGoal, LearningStyle, DailyTime } from "@/types/domain";
+import type { LearningGoal, LearningStyle, DailyTime, Specialty } from "@/types/domain";
 
 export default async function NewLearningPathPage() {
   const user = await requireCurrentUser();
@@ -22,6 +22,7 @@ export default async function NewLearningPathPage() {
         currentGoal={user.learningGoal as LearningGoal}
         currentStyle={user.learningStyle as LearningStyle}
         currentTime={user.dailyTime as DailyTime}
+        specialty={(user.specialty as Specialty | undefined) ?? "general"}
         suggestedTopics={suggested}
         triedTopics={triedTopics}
       />

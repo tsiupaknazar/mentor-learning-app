@@ -17,11 +17,18 @@ describe("inferTopicLanguage", () => {
     expect(inferTopicLanguage("Node.js Streams")).toBe("javascript");
   });
 
-  it("matches HTML, CSS, Python, and SQL topics", () => {
+  it("matches HTML, CSS, Python, SQL, and Java topics", () => {
     expect(inferTopicLanguage("HTML Semantics")).toBe("html");
     expect(inferTopicLanguage("CSS Flexbox")).toBe("css");
     expect(inferTopicLanguage("Python Decorators")).toBe("python");
     expect(inferTopicLanguage("SQL Joins")).toBe("sql");
+    expect(inferTopicLanguage("Java Generics")).toBe("java");
+    expect(inferTopicLanguage("Spring Boot Basics")).toBe("java");
+  });
+
+  it("doesn't mistake JavaScript for Java", () => {
+    expect(inferTopicLanguage("JavaScript Closures")).toBe("javascript");
+    expect(inferTopicLanguage("Java")).toBe("java");
   });
 
   it("returns null for a language-agnostic topic", () => {

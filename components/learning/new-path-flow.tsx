@@ -8,7 +8,7 @@ import { Sparkles } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { DiagnosticSet, KnowledgeProfile } from "@/lib/schemas";
-import type { DailyTime, LearningGoal, LearningStyle, SkillLevel } from "@/types/domain";
+import type { DailyTime, LearningGoal, LearningStyle, Specialty, SkillLevel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,7 @@ export function NewPathFlow({
   currentGoal,
   currentStyle,
   currentTime,
+  specialty = "general",
   suggestedTopics,
   triedTopics,
 }: {
@@ -36,6 +37,7 @@ export function NewPathFlow({
   currentGoal: LearningGoal;
   currentStyle: LearningStyle;
   currentTime: DailyTime;
+  specialty?: Specialty;
   suggestedTopics: string[];
   triedTopics: string[];
 }) {
@@ -46,7 +48,10 @@ export function NewPathFlow({
   const LEVELS: { value: SkillLevel | "not_sure"; label: string }[] = (
     Object.keys(t.onboarding.levels) as (SkillLevel | "not_sure")[]
   ).map((value) => ({ value, label: t.onboarding.levels[value] }));
-  const PRESET_TOPICS = t.onboarding.presetTopics;
+  // The learner's track (set at onboarding, editable in Settings) - just
+  // narrows which presets are on offer here; picking a new topic never
+  // changes it, unlike onboarding where the track is still being chosen.
+  const PRESET_TOPICS = t.onboarding.presetTopicsBySpecialty[specialty];
   const CUSTOM_TOPIC_SENTINEL = PRESET_TOPICS[PRESET_TOPICS.length - 1]!;
 
   const [step, setStep] = useState<Step>("form");

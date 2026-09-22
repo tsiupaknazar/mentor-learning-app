@@ -19,11 +19,13 @@ import type { ProgrammingLanguage } from "@/types/domain";
 const LANGUAGE_PATTERNS: Array<{ pattern: RegExp; language: ProgrammingLanguage }> = [
   { pattern: /typescript|\bts\b/i, language: "typescript" },
   { pattern: /node\.?js/i, language: "javascript" },
+  { pattern: /react\s*native/i, language: "javascript" },
   { pattern: /react|javascript|\bjs\b|next\.?js|es6|ecmascript/i, language: "javascript" },
   { pattern: /html/i, language: "html" },
   { pattern: /css|flexbox|tailwind|sass|scss/i, language: "css" },
   { pattern: /python|\bpy\b|django|flask/i, language: "python" },
   { pattern: /\bsql\b|postgres|mysql|sqlite|database quer/i, language: "sql" },
+  { pattern: /\bjava\b|spring\s*boot|spring\s*framework/i, language: "java" },
 ];
 
 /**
