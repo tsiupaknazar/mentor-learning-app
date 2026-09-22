@@ -6,7 +6,7 @@ import { Check } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { DailyTime, LearningGoal, LearningStyle, Locale, SkillLevel } from "@/types/domain";
+import type { DailyTime, LearningGoal, LearningStyle, Locale, Specialty, SkillLevel } from "@/types/domain";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +21,7 @@ interface SettingsFormProps {
   learningGoal: LearningGoal;
   learningStyle: LearningStyle;
   dailyTime: DailyTime;
+  specialty: Specialty;
 }
 
 export function SettingsForm(props: SettingsFormProps) {
@@ -29,6 +30,7 @@ export function SettingsForm(props: SettingsFormProps) {
   const [goal, setGoal] = useState(props.learningGoal);
   const [style, setStyle] = useState(props.learningStyle);
   const [time, setTime] = useState(props.dailyTime);
+  const [specialty, setSpecialty] = useState(props.specialty);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,12 +53,20 @@ export function SettingsForm(props: SettingsFormProps) {
   const LOCALES: { value: Locale; label: string }[] = (
     Object.keys(t.settings.languageNames) as Locale[]
   ).map((value) => ({ value, label: t.settings.languageNames[value] }));
+  const SPECIALTIES: { value: Specialty; label: string }[] = (
+    Object.keys(t.onboarding.specialties) as Specialty[]
+  ).map((value) => ({ value, label: t.onboarding.specialties[value] }));
 
   // The select has already switched by the time this runs, so a failed save
   // must switch it back (`revert`) - otherwise the form shows a setting that
   // was never stored, and nothing says so.
   async function save(
-    patch: Partial<{ learningGoal: LearningGoal; learningStyle: LearningStyle; dailyTime: DailyTime }>,
+    patch: Partial<{
+      learningGoal: LearningGoal;
+      learningStyle: LearningStyle;
+      dailyTime: DailyTime;
+      specialty: Specialty;
+    }>,
     revert: () => void
   ) {
     setSaveError(null);
@@ -154,6 +164,29 @@ export function SettingsForm(props: SettingsFormProps) {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">{t.settings.availableTimeHint}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t.settings.specialty}</Label>
+            <Select
+              value={specialty}
+              onValueChange={(v) => {
+                const previous = specialty;
+                setSpecialty(v as Specialty);
+                void save({ specialty: v as Specialty }, () => setSpecialty(previous));
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SPECIALTIES.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">

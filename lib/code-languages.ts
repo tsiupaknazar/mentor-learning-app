@@ -3,6 +3,7 @@ import { python } from "@codemirror/lang-python";
 import { sql } from "@codemirror/lang-sql";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
+import { java } from "@codemirror/lang-java";
 import type { Extension } from "@codemirror/state";
 
 import type { ProgrammingLanguage } from "@/types/domain";
@@ -14,6 +15,7 @@ const EXTENSION_BY_LANGUAGE: Record<ProgrammingLanguage, Extension> = {
   css: css(),
   python: python(),
   sql: sql(),
+  java: java(),
 };
 
 const DEFAULT_FILENAME_BY_LANGUAGE: Record<ProgrammingLanguage, string> = {
@@ -23,6 +25,7 @@ const DEFAULT_FILENAME_BY_LANGUAGE: Record<ProgrammingLanguage, string> = {
   css: "styles.css",
   python: "main.py",
   sql: "query.sql",
+  java: "Main.java",
 };
 
 export function languageExtension(language: ProgrammingLanguage): Extension {
@@ -49,6 +52,8 @@ export function languageFromFilename(filename: string): ProgrammingLanguage {
       return "python";
     case "sql":
       return "sql";
+    case "java":
+      return "java";
     default:
       return "javascript";
   }

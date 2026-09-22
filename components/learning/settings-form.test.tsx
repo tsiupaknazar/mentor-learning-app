@@ -13,6 +13,7 @@ const BASE_PROPS = {
   learningGoal: "improve_skills" as const,
   learningStyle: "balanced" as const,
   dailyTime: "30min" as const,
+  specialty: "general" as const,
 };
 
 const updatePreferencesMock = vi.fn();
@@ -37,7 +38,7 @@ describe("SettingsForm", () => {
     render(<SettingsForm {...BASE_PROPS} />);
 
     // Selects aren't labelled via htmlFor, so query by render order:
-    // learning goal, learning style, available time, language.
+    // learning goal, learning style, available time, specialty, language.
     const [goalSelect] = screen.getAllByRole("combobox");
     await user.click(goalSelect!);
     await user.click(await screen.findByRole("option", { name: "Prepare for interviews" }));

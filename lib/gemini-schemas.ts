@@ -90,7 +90,7 @@ const EXERCISE_TYPES = [
   "review_code",
 ];
 const EXERCISE_DIFFICULTIES = ["easy", "medium", "hard", "interview", "real_world"];
-const PROGRAMMING_LANGUAGES = ["javascript", "typescript", "html", "css", "python", "sql"];
+const PROGRAMMING_LANGUAGES = ["javascript", "typescript", "html", "css", "python", "sql", "java"];
 
 export const exerciseGeminiSchema: Schema = {
   type: Type.OBJECT,

@@ -71,7 +71,16 @@ const programmingLanguage = v.union(
   v.literal("html"),
   v.literal("css"),
   v.literal("python"),
-  v.literal("sql")
+  v.literal("sql"),
+  v.literal("java")
+);
+
+const specialty = v.union(
+  v.literal("frontend"),
+  v.literal("backend"),
+  v.literal("mobile"),
+  v.literal("data"),
+  v.literal("general")
 );
 
 const masteryScore = v.object({
@@ -95,6 +104,12 @@ export default defineSchema({
     learningGoal,
     learningStyle,
     dailyTime,
+    // The track picked at registration (or changed later in Settings) — a
+    // curation hint for which technologies get suggested when starting a
+    // learning path, not a restriction on what can be studied. Optional so
+    // pre-migration rows (which predate this field) fall back to "general"
+    // (the full, unfiltered topic list) everywhere it's read.
+    specialty: v.optional(specialty),
     onboardingComplete: v.boolean(),
     currentStreak: v.number(),
     longestStreak: v.number(),

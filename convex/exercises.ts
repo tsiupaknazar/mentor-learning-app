@@ -29,7 +29,8 @@ const programmingLanguage = v.union(
   v.literal("html"),
   v.literal("css"),
   v.literal("python"),
-  v.literal("sql")
+  v.literal("sql"),
+  v.literal("java")
 );
 const locale = v.union(v.literal("en"), v.literal("uk"));
 

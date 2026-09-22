@@ -1,4 +1,4 @@
-import type { DailyTime, Locale, LearningGoal, LearningStyle, SkillLevel } from "@/types/domain";
+import type { DailyTime, Locale, LearningGoal, LearningStyle, Specialty, SkillLevel } from "@/types/domain";
 
 export type { Locale };
 
@@ -67,8 +67,11 @@ export interface Dictionary {
     levelLabel: string;
     levels: Record<SkillLevel | "not_sure", string>;
     levelHints: Record<SkillLevel | "not_sure", string>;
+    specialtyLabel: string;
+    specialties: Record<Specialty, string>;
+    specialtyHints: Record<Specialty, string>;
     topicLabel: string;
-    presetTopics: string[];
+    presetTopicsBySpecialty: Record<Specialty, string[]>;
     customTopicPlaceholder: string;
     styleLabel: string;
     styles: Record<LearningStyle, string>;
@@ -108,6 +111,7 @@ export interface Dictionary {
     availableTime: string;
     couldNotSave: string;
     availableTimeHint: string;
+    specialty: string;
     language: string;
     languageNames: Record<Locale, string>;
   };
@@ -508,7 +512,7 @@ const en: Dictionary = {
     heroTitle: 'Learn to code with a mentor who won\u2019t let you get away with \u201Cit works.\u201D',
     heroSubtitle:
       "No lecture-and-quiz cycle. You attempt real problems, a strict senior-engineer reviewer breaks down what\u2019s actually wrong, and the next problem gets harder only once you\u2019ve earned it.",
-    topicsLine: "any topic \u2014 JS, React, SQL, Python, system design...",
+    topicsLine: "any track \u2014 frontend, backend, mobile, data: JS, React, Python, Java, SQL...",
     reviewLabel: "closures-exercise-04 \u00B7 review",
     reviewYou1: "I used a var-hoisted counter here because it was easier.",
     reviewMentor1:
@@ -556,22 +560,44 @@ const en: Dictionary = {
       advanced: "You work with this every day and want to fill gaps or go further.",
       not_sure: "A short quiz places you. If you've never coded, choose Beginner instead \u2014 the quiz is not for first-timers.",
     },
+    specialtyLabel: "What kind of developer do you want to become?",
+    specialties: {
+      frontend: "Frontend",
+      backend: "Backend",
+      mobile: "Mobile",
+      data: "Data",
+      general: "Not sure yet",
+    },
+    specialtyHints: {
+      frontend: "Websites and web apps \u2014 JavaScript, React, HTML & CSS.",
+      backend: "Servers, APIs and databases \u2014 Node.js, Python, Java, SQL.",
+      mobile: "Apps for iOS and Android \u2014 React Native, JavaScript, TypeScript.",
+      data: "Data analysis and scripting \u2014 Python, SQL, algorithms.",
+      general: "Explore across topics and decide as you go.",
+    },
     topicLabel: "What do you want to learn?",
-    presetTopics: [
-      "JavaScript",
-      "TypeScript",
-      "React",
-      "Next.js",
-      "HTML & CSS",
-      "Node.js",
-      "SQL",
-      "Git",
-      "Python",
-      "Algorithms",
-      "Data Structures",
-      "System Design",
-      "Custom topic\u2026",
-    ],
+    presetTopicsBySpecialty: {
+      frontend: ["JavaScript", "TypeScript", "React", "Next.js", "HTML & CSS", "Custom topic\u2026"],
+      backend: ["Node.js", "Python", "Java", "SQL", "System Design", "Custom topic\u2026"],
+      mobile: ["React Native", "JavaScript", "TypeScript", "Git", "Custom topic\u2026"],
+      data: ["Python", "SQL", "Algorithms", "Data Structures", "Custom topic\u2026"],
+      general: [
+        "JavaScript",
+        "TypeScript",
+        "React",
+        "Next.js",
+        "HTML & CSS",
+        "Node.js",
+        "SQL",
+        "Git",
+        "Python",
+        "Java",
+        "Algorithms",
+        "Data Structures",
+        "System Design",
+        "Custom topic\u2026",
+      ],
+    },
     customTopicPlaceholder: 'e.g. "React Server Components"',
     styleLabel: "Learning style",
     styles: {
@@ -621,6 +647,7 @@ const en: Dictionary = {
     availableTime: "Available time",
     couldNotSave: "Couldn\u2019t save that change. Your previous setting was kept.",
     availableTimeHint: "Sets how many exercises a session has. Applies from your next session.",
+    specialty: "Track",
     language: "Language",
     languageNames: { en: "English", uk: "Ukrainian" },
   },
@@ -1066,7 +1093,7 @@ const uk: Dictionary = {
     heroTitle: "Вчіться програмувати з ментором, який не дасть відкараскатися фразою «воно ж працює».",
     heroSubtitle:
       "Ніякого циклу «лекція-тест». Ви розв\u2019язуєте реальні задачі, суворий сеньйор-рев\u2019юер розбирає, що саме не так, а наступна задача стає складнішою лише тоді, коли ви це заслужили.",
-    topicsLine: "будь-яка тема — JS, React, SQL, Python, системний дизайн...",
+    topicsLine: "будь-який напрямок — фронтенд, бекенд, мобільна розробка, дані: JS, React, Python, Java, SQL...",
     reviewLabel: "closures-exercise-04 · рев'ю",
     reviewYou1: "Я використав var-лічильник тут, бо так простіше.",
     reviewMentor1:
@@ -1123,22 +1150,44 @@ const uk: Dictionary = {
       advanced: "Ви працюєте з цим щодня й хочете закрити прогалини чи піти далі.",
       not_sure: "Короткий тест визначить рівень. Якщо ви ніколи не програмували, обирайте «Початківець» — тест не для тих, хто щойно починає.",
     },
+    specialtyLabel: "Ким ви хочете стати?",
+    specialties: {
+      frontend: "Фронтенд",
+      backend: "Бекенд",
+      mobile: "Мобільна розробка",
+      data: "Дані",
+      general: "Ще не визначився(лась)",
+    },
+    specialtyHints: {
+      frontend: "Сайти й вебзастосунки — JavaScript, React, HTML і CSS.",
+      backend: "Сервери, API та бази даних — Node.js, Python, Java, SQL.",
+      mobile: "Застосунки для iOS та Android — React Native, JavaScript, TypeScript.",
+      data: "Аналіз даних і скриптинг — Python, SQL, алгоритми.",
+      general: "Дослідити різні теми й визначитися по ходу.",
+    },
     topicLabel: "Що ви хочете вивчити?",
-    presetTopics: [
-      "JavaScript",
-      "TypeScript",
-      "React",
-      "Next.js",
-      "HTML і CSS",
-      "Node.js",
-      "SQL",
-      "Git",
-      "Python",
-      "Алгоритми",
-      "Структури даних",
-      "Системний дизайн",
-      "Своя тема…",
-    ],
+    presetTopicsBySpecialty: {
+      frontend: ["JavaScript", "TypeScript", "React", "Next.js", "HTML і CSS", "Своя тема…"],
+      backend: ["Node.js", "Python", "Java", "SQL", "Системний дизайн", "Своя тема…"],
+      mobile: ["React Native", "JavaScript", "TypeScript", "Git", "Своя тема…"],
+      data: ["Python", "SQL", "Алгоритми", "Структури даних", "Своя тема…"],
+      general: [
+        "JavaScript",
+        "TypeScript",
+        "React",
+        "Next.js",
+        "HTML і CSS",
+        "Node.js",
+        "SQL",
+        "Git",
+        "Python",
+        "Java",
+        "Алгоритми",
+        "Структури даних",
+        "Системний дизайн",
+        "Своя тема…",
+      ],
+    },
     customTopicPlaceholder: 'напр. "React Server Components"',
     styleLabel: "Стиль навчання",
     styles: {
@@ -1188,6 +1237,7 @@ const uk: Dictionary = {
     availableTime: "Доступний час",
     couldNotSave: "Не вдалося зберегти зміну. Попереднє значення збережено.",
     availableTimeHint: "Визначає, скільки вправ у сесії. Діє з наступної сесії.",
+    specialty: "Напрямок",
     language: "Мова",
     languageNames: { en: "English", uk: "Українська" },
   },
