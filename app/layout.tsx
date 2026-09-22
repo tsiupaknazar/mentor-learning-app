@@ -104,7 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <ClerkProvider afterSignOutUrl="/">
       <ConvexClientProvider>
         <PostHogProvider>
-          <html lang="en" className={`dark ${plexSans.variable} ${plexMono.variable} ${fraunces.variable}`}>
+          <html lang="en" suppressHydrationWarning className={`dark ${plexSans.variable} ${plexMono.variable} ${fraunces.variable}`}>
             <body className="min-h-screen bg-background font-sans text-foreground">
               {children}
               <Analytics />
