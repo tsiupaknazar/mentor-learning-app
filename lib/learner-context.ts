@@ -19,6 +19,8 @@ export async function getLearnerContext(userId: Id<"users">): Promise<LearnerCon
     level: raw.level,
     learningGoal: raw.learningGoal,
     learningStyle: raw.learningStyle,
+    dailyTime: raw.dailyTime,
+    specialty: raw.specialty,
     locale: raw.locale,
     currentTopics: raw.currentTopics,
     weakTopics: raw.weakTopics,
