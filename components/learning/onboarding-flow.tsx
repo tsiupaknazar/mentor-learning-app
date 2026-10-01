@@ -2,10 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "convex/react";
 import { ChevronDown } from "lucide-react";
 
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { DiagnosticSet, KnowledgeProfile } from "@/lib/schemas";
 import type { DailyTime, LearningGoal, LearningStyle, Locale, Specialty, SkillLevel } from "@/types/domain";
