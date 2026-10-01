@@ -29,6 +29,8 @@ function formatLearnerContext(ctx: LearnerContext): string {
       level: ctx.level,
       learningGoal: ctx.learningGoal,
       learningStyle: ctx.learningStyle,
+      dailyTime: ctx.dailyTime,
+      specialty: ctx.specialty,
       currentTopics: ctx.currentTopics,
       weakTopics: ctx.weakTopics,
       strongTopics: ctx.strongTopics,
