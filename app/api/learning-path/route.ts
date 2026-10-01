@@ -44,7 +44,20 @@ export async function POST(req: Request) {
       pathSubject: null,
     };
 
-    const { system, prompt } = buildLearningPathPrompt(learnerContext, body.topic, body.knowledgeProfile);
+    // A fresh diagnostic is the strongest signal for the initial path. Merge
+    // it into historical context so prompt guidance cannot claim there are
+    // "no weak areas" while the diagnostic says otherwise.
+    const diagnosticWeakTopics =
+      body.knowledgeProfile?.subtopics.filter((s) => s.band === "weak").map((s) => s.subtopic) ?? [];
+    const diagnosticStrongTopics =
+      body.knowledgeProfile?.subtopics.filter((s) => s.band === "strong").map((s) => s.subtopic) ?? [];
+    const effectiveLearnerContext = {
+      ...learnerContext,
+      weakTopics: [...new Set([...learnerContext.weakTopics, ...diagnosticWeakTopics])],
+      strongTopics: [...new Set([...learnerContext.strongTopics, ...diagnosticStrongTopics])],
+    };
+
+    const { system, prompt } = buildLearningPathPrompt(effectiveLearnerContext, body.topic, body.knowledgeProfile);
     const path = await generateStructured({
       schema: learningPathSchema,
       responseSchema: learningPathGeminiSchema,
