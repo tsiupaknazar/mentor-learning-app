@@ -88,6 +88,16 @@ ${selfReportedLevel === "not_sure" ? `The learner does not know their level and 
   };
 }
 
+export function buildCalibrationPrompt(topic: string, selfReportedLevel: SkillLevel, locale: Locale = "en") {
+  return {
+    system: `You design short calibration checks for a programming learning platform. The learner already selected a level, so this is NOT a full placement exam. Use 4-6 high-signal questions to check whether that self-assessment is broadly plausible and identify the most important gaps. Mix question types and avoid trivia. Return ONLY JSON matching the required schema.${languageInstruction(locale)}`,
+    prompt: `Topic: ${topic}
+Learner's selected level: ${selfReportedLevel}
+
+Generate 4-6 concise, high-signal questions centered around the expected competencies for a ${selfReportedLevel} learner in "${topic}". Cover distinct important subtopics rather than exhaustive breadth. Include at least one code-reading or debugging question and at least one implementation or explanation question. Calibrate difficulty around the selected level, with one slightly easier question and one slightly harder question to detect over- or under-estimation. For multiple_choice questions populate choices; otherwise set choices to null. Set codeSnippet to null unless needed. Use stable ids such as "q1".`,
+  };
+}
+
 export function buildKnowledgeProfilePrompt(
   topic: string,
   answeredQuestions: Array<{ prompt: string; type: string; subtopic: string; answer: string }>,
