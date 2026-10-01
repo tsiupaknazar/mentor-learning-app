@@ -102,24 +102,19 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
       return;
     }
 
-    if (level === "not_sure") {
-      setStep("loading_diagnostic");
-      try {
-        const data = await apiFetch<{ diagnostic: DiagnosticSet }>("/api/diagnostic/questions", {
-          topic: resolvedTopic,
-          selfReportedLevel: "not_sure",
-        });
-        setDiagnostic(data.diagnostic);
-        setAnswers({});
-        setStep("diagnostic");
-      } catch (e) {
-        setError(apiErrorMessage(e, t, t.onboarding.couldNotGenerateDiagnostic));
-        setStep("form");
-      }
-      return;
+    setStep("loading_diagnostic");
+    try {
+      const data = await apiFetch<{ diagnostic: DiagnosticSet }>("/api/diagnostic/questions", {
+        topic: resolvedTopic,
+        selfReportedLevel: level,
+      });
+      setDiagnostic(data.diagnostic);
+      setAnswers({});
+      setStep("diagnostic");
+    } catch (e) {
+      setError(apiErrorMessage(e, t, t.onboarding.couldNotGenerateDiagnostic));
+      setStep("form");
     }
-
-    await finishOnboarding(level, null);
   }
 
   async function handleSubmitDiagnostic() {

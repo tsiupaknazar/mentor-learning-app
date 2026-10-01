@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { generateStructured } from "@/lib/gemini";
-import { diagnosticSetSchema } from "@/lib/schemas";
+import { calibrationSetSchema, diagnosticSetSchema } from "@/lib/schemas";
 import { diagnosticSetGeminiSchema } from "@/lib/gemini-schemas";
-import { buildDiagnosticPrompt } from "@/lib/prompts";
+import { buildCalibrationPrompt, buildDiagnosticPrompt } from "@/lib/prompts";
 import { requireCurrentUser } from "@/lib/current-user";
 import { handleRouteError } from "@/lib/route-utils";
 
@@ -18,9 +18,12 @@ export async function POST(req: Request) {
     const user = await requireCurrentUser();
     const body = requestSchema.parse(await req.json());
 
-    const { system, prompt } = buildDiagnosticPrompt(body.topic, body.selfReportedLevel, user.locale ?? "en");
+    const isFullDiagnostic = body.selfReportedLevel === "not_sure";
+    const { system, prompt } = isFullDiagnostic
+      ? buildDiagnosticPrompt(body.topic, body.selfReportedLevel, user.locale ?? "en")
+      : buildCalibrationPrompt(body.topic, body.selfReportedLevel, user.locale ?? "en");
     const diagnostic = await generateStructured({
-      schema: diagnosticSetSchema,
+      schema: isFullDiagnostic ? diagnosticSetSchema : calibrationSetSchema,
       responseSchema: diagnosticSetGeminiSchema,
       system,
       prompt,

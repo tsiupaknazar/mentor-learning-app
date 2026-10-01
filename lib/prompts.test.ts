@@ -3,6 +3,7 @@ import {
   MENTOR_PERSONA,
   TEAM_LEAD_PERSONA,
   buildDiagnosticPrompt,
+  buildCalibrationPrompt,
   buildKnowledgeProfilePrompt,
   buildLearningPathPrompt,
   buildPracticeProblemSetPrompt,
@@ -85,6 +86,15 @@ describe("buildDiagnosticPrompt: for someone who doesn't know their level", () =
 
   it("is unchanged for someone who chose a level", () => {
     expect(buildDiagnosticPrompt("JavaScript", "junior").prompt).not.toContain("very gentle");
+  });
+});
+
+describe("buildCalibrationPrompt", () => {
+  it("keeps selected-level calibration short and level-targeted", () => {
+    const { prompt } = buildCalibrationPrompt("React", "junior");
+    expect(prompt).toContain("4-6");
+    expect(prompt).toContain("junior");
+    expect(prompt).toContain("slightly harder");
   });
 });
 
