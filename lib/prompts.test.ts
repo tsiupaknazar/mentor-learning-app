@@ -27,6 +27,8 @@ function ctx(overrides: Partial<LearnerContext> = {}): LearnerContext {
     level: "junior",
     learningGoal: "improve_skills",
     learningStyle: "balanced",
+    dailyTime: "30min",
+    specialty: "general",
     locale: "en",
     currentTopics: [],
     weakTopics: [],

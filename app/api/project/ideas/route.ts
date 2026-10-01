@@ -29,6 +29,8 @@ export async function POST(req: Request) {
       level: user.level,
       learningGoal: user.learningGoal,
       learningStyle: user.learningStyle,
+      dailyTime: user.dailyTime,
+      specialty: user.specialty ?? "general",
       locale: user.locale ?? "en",
       currentTopics: [],
       weakTopics: [],
