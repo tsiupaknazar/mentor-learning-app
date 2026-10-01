@@ -65,6 +65,8 @@ export const getLearnerContext = query({
       level: user.level,
       learningGoal: user.learningGoal,
       learningStyle: user.learningStyle,
+      dailyTime: user.dailyTime,
+      specialty: user.specialty ?? "general",
       locale: user.locale ?? "en",
       currentTopics: currentTopics.slice(0, 5),
       weakTopics: weakTopics.slice(0, 5),

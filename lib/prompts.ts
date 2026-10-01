@@ -29,6 +29,8 @@ function formatLearnerContext(ctx: LearnerContext): string {
       level: ctx.level,
       learningGoal: ctx.learningGoal,
       learningStyle: ctx.learningStyle,
+      dailyTime: ctx.dailyTime,
+      specialty: ctx.specialty,
       currentTopics: ctx.currentTopics,
       weakTopics: ctx.weakTopics,
       strongTopics: ctx.strongTopics,
@@ -106,6 +108,40 @@ For each distinct subtopic represented above, assign a mastery band (weak/medium
 // Learning path
 // ---------------------------------------------------------------------------
 
+function learningPathPersonalizationPolicy(ctx: LearnerContext) {
+  const goal = {
+    first_job: "Prioritize employable fundamentals, practical tooling, debugging, testing, Git/workflow habits, and portfolio-ready application. Do not over-index on trivia.",
+    interview_prep: "Prioritize concepts commonly tested in interviews, code reading, debugging, trade-offs, and interview-style problem solving while preserving prerequisite order.",
+    improve_skills: "Prioritize closing demonstrated gaps and strengthening practical application of the requested topic.",
+    learn_new_tech: "Build a fast but prerequisite-safe route from core mental models to practical use of the technology.",
+    production_skills: "Prioritize testing, maintainability, debugging, architecture, reliability, performance, and production trade-offs where relevant.",
+    master_topic: "Go beyond surface usage into internals, edge cases, trade-offs, advanced patterns, and precise mental models after prerequisites are covered.",
+  }[ctx.learningGoal];
+
+  const style = {
+    more_practice: "Favor smaller theory units followed quickly by hands-on implementation/debugging topics; avoid long theory-only stretches.",
+    balanced: "Balance conceptual understanding with hands-on application throughout the path.",
+    more_theory: "Give conceptual models, reasoning, and explanation topics more room before application, but keep every section practice-connected.",
+  }[ctx.learningStyle];
+
+  const pace = {
+    "15min": "Design very small session-sized steps. Prefer more granular nodes that can each be meaningfully learned or practised in about 15 minutes.",
+    "30min": "Keep nodes focused enough for roughly 30-minute learning sessions; split broad concepts rather than bundling them.",
+    "1hr": "Nodes may combine closely related concepts suitable for roughly one focused hour, without turning into broad multi-day modules.",
+    "2hr_plus": "Use larger coherent units and faster progression where prerequisites allow; avoid unnecessary fragmentation.",
+  }[ctx.dailyTime];
+
+  const specialty = {
+    frontend: "When the requested topic permits multiple directions, prefer examples and curriculum decisions useful for frontend/web application development.",
+    backend: "When the requested topic permits multiple directions, prefer server-side, API, data, reliability, and backend application concerns.",
+    mobile: "When the requested topic permits multiple directions, prefer mobile application concerns and patterns.",
+    data: "When the requested topic permits multiple directions, prefer data processing, analysis, data structures, and data-oriented application concerns.",
+    general: "Keep the path domain-neutral unless the requested topic itself implies a domain.",
+  }[ctx.specialty];
+
+  return [goal, style, pace, specialty].join("\n");
+}
+
 export function buildLearningPathPrompt(
   ctx: LearnerContext,
   topic: string,
@@ -116,6 +152,9 @@ export function buildLearningPathPrompt(
     prompt: `Learner context: ${formatLearnerContext(ctx)}
 Requested topic: ${topic}
 Knowledge profile from diagnostic: ${knowledgeProfile ? JSON.stringify(knowledgeProfile) : "none — no diagnostic was taken, assume the learner's self-reported level is accurate"}
+
+Personalization requirements (these are curriculum constraints, not optional suggestions):
+${learningPathPersonalizationPolicy(ctx)}
 
 ${ctx.level === "beginner" ? `The learner is an ABSOLUTE BEGINNER: make the first topic assume nothing, order topics in the smallest steps that each build on the last (one new idea per topic, teachable and practised in a single short session), never start from an advanced or tool-heavy topic, and only include topics a beginner can do in a browser with no setup. ` : ""}Generate a learning path for "${topic}" as a tree of topics (max depth 3, max 12 top-level topics). Each topic needs a short id, title, one-sentence summary, prerequisiteIds referencing earlier topic ids in this same tree (empty array if none), and nested children where useful. Weight time toward ${ctx.weakTopics.length > 0 ? `weak areas: ${ctx.weakTopics.join(", ")}` : "foundational concepts, since no weak areas are known yet"}.`,
   };

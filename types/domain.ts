@@ -75,6 +75,8 @@ export interface LearnerContext {
   level: SkillLevel;
   learningGoal: LearningGoal;
   learningStyle: LearningStyle;
+  dailyTime: DailyTime;
+  specialty: Specialty;
   locale: Locale;
   currentTopics: string[];
   weakTopics: string[];
