@@ -42,6 +42,8 @@ export async function POST(req: Request) {
       level: body.onboarding?.level ?? user.level,
       learningGoal: body.onboarding?.learningGoal ?? user.learningGoal,
       learningStyle: body.onboarding?.learningStyle ?? user.learningStyle,
+      dailyTime: body.onboarding?.dailyTime ?? user.dailyTime,
+      specialty: body.onboarding?.specialty ?? user.specialty ?? "general",
       locale: user.locale ?? "en",
       currentTopics: [],
       weakTopics: [],
