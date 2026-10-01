@@ -39,9 +39,9 @@ export async function POST(req: Request) {
       ? await getLearnerContext(user._id).catch(() => null)
       : null;
     const learnerContext = ctx ?? {
-      level: user.level,
-      learningGoal: user.learningGoal,
-      learningStyle: user.learningStyle,
+      level: body.onboarding?.level ?? user.level,
+      learningGoal: body.onboarding?.learningGoal ?? user.learningGoal,
+      learningStyle: body.onboarding?.learningStyle ?? user.learningStyle,
       locale: user.locale ?? "en",
       currentTopics: [],
       weakTopics: [],
