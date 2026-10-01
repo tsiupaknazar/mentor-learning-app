@@ -104,14 +104,17 @@ export const DIAGNOSTIC_QUESTION_COUNT = { min: 6, max: 20 } as const;
 
 export const diagnosticSetSchema = z.object({
   topic: z.string().min(1),
-  // A fixed small count can't discriminate skill level across a broad topic
-  // (e.g. "JavaScript" has far more surface area than "React Server
-  // Components"). The prompt scales actual count to topic breadth; this
-  // range is just the outer bound Zod enforces either way.
   questions: z
     .array(diagnosticQuestionSchema)
     .min(DIAGNOSTIC_QUESTION_COUNT.min)
     .max(DIAGNOSTIC_QUESTION_COUNT.max),
+});
+
+// A selected level only needs a quick calibration, not the full placement
+// diagnostic used when the learner genuinely does not know their level.
+export const calibrationSetSchema = z.object({
+  topic: z.string().min(1),
+  questions: z.array(diagnosticQuestionSchema).min(4).max(6),
 });
 export type DiagnosticSet = z.infer<typeof diagnosticSetSchema>;
 
