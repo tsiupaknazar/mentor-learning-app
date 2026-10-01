@@ -40,7 +40,6 @@ type Step =
 export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
   const router = useRouter();
   const { t, locale, setLocale } = useLocale();
-  const completeOnboarding = useMutation(api.users.completeOnboarding);
 
   const GOALS: { value: LearningGoal; label: string }[] = (
     Object.keys(t.onboarding.goals) as LearningGoal[]
@@ -151,16 +150,17 @@ export function OnboardingFlow({ userId }: { userId: Id<"users"> }) {
     setStep("generating_path");
     setError(null);
     try {
-      await completeOnboarding({
-        userId,
-        level: resolvedLevel,
-        learningGoal: goal,
-        learningStyle: style,
-        dailyTime: time,
-        specialty,
+      await apiFetch("/api/learning-path", {
+        topic: resolvedTopic,
+        knowledgeProfile: profile,
+        onboarding: {
+          level: resolvedLevel,
+          learningGoal: goal,
+          learningStyle: style,
+          dailyTime: time,
+          specialty,
+        },
       });
-
-      await apiFetch("/api/learning-path", { topic: resolvedTopic, knowledgeProfile: profile });
 
       track("onboarding_completed", {
         level: resolvedLevel,
