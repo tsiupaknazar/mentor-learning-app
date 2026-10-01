@@ -98,6 +98,94 @@ export const createLearningPath = mutation({
   },
 });
 
+/** Atomically persists the first path and marks onboarding complete. */
+export const createInitialLearningPath = mutation({
+  args: {
+    userId: v.id("users"),
+    topic: v.string(),
+    title: v.string(),
+    rationale: v.string(),
+    knowledgeProfileSummary: v.optional(v.string()),
+    topics: v.array(topicNodeValidator),
+    contentLocale: v.optional(v.union(v.literal("en"), v.literal("uk"))),
+    level: v.union(v.literal("beginner"), v.literal("junior"), v.literal("intermediate"), v.literal("advanced")),
+    learningGoal: v.union(v.literal("first_job"), v.literal("interview_prep"), v.literal("improve_skills"), v.literal("learn_new_tech"), v.literal("production_skills"), v.literal("master_topic")),
+    learningStyle: v.union(v.literal("more_practice"), v.literal("balanced"), v.literal("more_theory")),
+    dailyTime: v.union(v.literal("15min"), v.literal("30min"), v.literal("1hr"), v.literal("2hr_plus")),
+    specialty: v.union(v.literal("frontend"), v.literal("backend"), v.literal("mobile"), v.literal("data"), v.literal("general")),
+  },
+  handler: async (ctx, args) => {
+    const existingActive = await ctx.db
+      .query("learningPaths")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+    for (const path of existingActive) {
+      await ctx.db.patch(path._id, { isActive: false });
+    }
+
+    const learningPathId = await ctx.db.insert("learningPaths", {
+      userId: args.userId,
+      topic: args.topic,
+      title: args.title,
+      rationale: args.rationale,
+      knowledgeProfileSummary: args.knowledgeProfileSummary,
+      isActive: true,
+      createdAt: Date.now(),
+      contentLocale: args.contentLocale ?? "en",
+    });
+
+    let orderIndex = 0;
+    const insertNode = async (
+      node: TopicNodeInput,
+      parentTopicId: Id<"topics"> | undefined
+    ): Promise<void> => {
+      const topicId = await ctx.db.insert("topics", {
+        learningPathId,
+        userId: args.userId,
+        parentTopicId,
+        externalId: node.id,
+        title: node.title,
+        summary: node.summary,
+        prerequisiteExternalIds: node.prerequisiteIds,
+        orderIndex: orderIndex++,
+      });
+      await ctx.db.insert("topicProgress", {
+        userId: args.userId,
+        topicId,
+        mastery: {
+          knowledge: 0,
+          application: 0,
+          debugging: 0,
+          explanation: 0,
+          retention: 0,
+          overall: 0,
+        },
+        attemptsCount: 0,
+        status: "not_started",
+      });
+      for (const child of node.children) {
+        await insertNode(child, topicId);
+      }
+    };
+
+    for (const topLevel of args.topics as TopicNodeInput[]) {
+      await insertNode(topLevel, undefined);
+    }
+
+    await ctx.db.patch(args.userId, {
+      level: args.level,
+      learningGoal: args.learningGoal,
+      learningStyle: args.learningStyle,
+      dailyTime: args.dailyTime,
+      specialty: args.specialty,
+      onboardingComplete: true,
+    });
+
+    return learningPathId;
+  },
+});
+
 /** All of a user's learning paths (active + inactive), most recent first — powers "start a new topic" suggestions (what have they already tried) and a path-history view. */
 export const listLearningPaths = query({
   args: { userId: v.id("users") },

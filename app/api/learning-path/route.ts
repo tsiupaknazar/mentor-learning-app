@@ -14,6 +14,13 @@ import { api } from "@/convex/_generated/api";
 const requestSchema = z.object({
   topic: z.string().min(1).max(120),
   knowledgeProfile: knowledgeProfileSchema.nullable(),
+  onboarding: z.object({
+    level: z.enum(["beginner", "junior", "intermediate", "advanced"]),
+    learningGoal: z.enum(["first_job", "interview_prep", "improve_skills", "learn_new_tech", "production_skills", "master_topic"]),
+    learningStyle: z.enum(["more_practice", "balanced", "more_theory"]),
+    dailyTime: z.enum(["15min", "30min", "1hr", "2hr_plus"]),
+    specialty: z.enum(["frontend", "backend", "mobile", "data", "general"]),
+  }).optional(),
 });
 
 /**
@@ -32,9 +39,9 @@ export async function POST(req: Request) {
       ? await getLearnerContext(user._id).catch(() => null)
       : null;
     const learnerContext = ctx ?? {
-      level: user.level,
-      learningGoal: user.learningGoal,
-      learningStyle: user.learningStyle,
+      level: body.onboarding?.level ?? user.level,
+      learningGoal: body.onboarding?.learningGoal ?? user.learningGoal,
+      learningStyle: body.onboarding?.learningStyle ?? user.learningStyle,
       locale: user.locale ?? "en",
       currentTopics: [],
       weakTopics: [],
@@ -44,7 +51,20 @@ export async function POST(req: Request) {
       pathSubject: null,
     };
 
-    const { system, prompt } = buildLearningPathPrompt(learnerContext, body.topic, body.knowledgeProfile);
+    // A fresh diagnostic is the strongest signal for the initial path. Merge
+    // it into historical context so prompt guidance cannot claim there are
+    // "no weak areas" while the diagnostic says otherwise.
+    const diagnosticWeakTopics =
+      body.knowledgeProfile?.subtopics.filter((s) => s.band === "weak").map((s) => s.subtopic) ?? [];
+    const diagnosticStrongTopics =
+      body.knowledgeProfile?.subtopics.filter((s) => s.band === "strong").map((s) => s.subtopic) ?? [];
+    const effectiveLearnerContext = {
+      ...learnerContext,
+      weakTopics: [...new Set([...learnerContext.weakTopics, ...diagnosticWeakTopics])],
+      strongTopics: [...new Set([...learnerContext.strongTopics, ...diagnosticStrongTopics])],
+    };
+
+    const { system, prompt } = buildLearningPathPrompt(effectiveLearnerContext, body.topic, body.knowledgeProfile);
     const path = await generateStructured({
       schema: learningPathSchema,
       responseSchema: learningPathGeminiSchema,
@@ -53,7 +73,7 @@ export async function POST(req: Request) {
       tier: "reasoning",
     });
 
-    const learningPathId = await convexMutation(api.learningPaths.createLearningPath, {
+    const pathArgs = {
       userId: user._id,
       topic: body.topic,
       title: path.title,
@@ -61,7 +81,15 @@ export async function POST(req: Request) {
       knowledgeProfileSummary: body.knowledgeProfile?.summary,
       topics: path.topics,
       contentLocale: user.locale ?? "en",
-    });
+    };
+
+    const learningPathId =
+      !user.onboardingComplete && body.onboarding
+        ? await convexMutation(api.learningPaths.createInitialLearningPath, {
+            ...pathArgs,
+            ...body.onboarding,
+          })
+        : await convexMutation(api.learningPaths.createLearningPath, pathArgs);
 
     return NextResponse.json({ learningPathId, path });
   } catch (err) {

@@ -167,10 +167,72 @@ const learningPathTopicSchema: z.ZodType<
   })
 );
 
-export const learningPathSchema = z.object({
+const learningPathBaseSchema = z.object({
   title: z.string().min(1).max(120),
   rationale: z.string().min(1).max(500),
   topics: z.array(learningPathTopicSchema).min(1).max(12),
+});
+
+export const learningPathSchema = learningPathBaseSchema.superRefine((path, ctx) => {
+  const flattened: Array<{ node: LearningPathTopicNode; depth: number; order: number }> = [];
+  const ids = new Set<string>();
+  let order = 0;
+
+  const visit = (nodes: LearningPathTopicNode[], depth: number) => {
+    for (const node of nodes) {
+      if (depth > 3) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Learning path depth must not exceed 3 (topic "${node.id}" is at depth ${depth}).`,
+        });
+      }
+      if (ids.has(node.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Learning path topic ids must be unique; duplicate id "${node.id}".`,
+        });
+      }
+      ids.add(node.id);
+      flattened.push({ node, depth, order: order++ });
+      visit(node.children, depth + 1);
+    }
+  };
+  visit(path.topics, 1);
+
+  const orderById = new Map(flattened.map(({ node, order }) => [node.id, order]));
+  const titleKeys = new Set<string>();
+  for (const { node, order: nodeOrder } of flattened) {
+    const titleKey = node.title.trim().toLocaleLowerCase();
+    if (titleKeys.has(titleKey)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Learning path contains duplicate topic title "${node.title}".`,
+      });
+    }
+    titleKeys.add(titleKey);
+
+    for (const prerequisiteId of node.prerequisiteIds) {
+      if (prerequisiteId === node.id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Topic "${node.id}" cannot depend on itself.`,
+        });
+        continue;
+      }
+      const prerequisiteOrder = orderById.get(prerequisiteId);
+      if (prerequisiteOrder === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Topic "${node.id}" references unknown prerequisite "${prerequisiteId}".`,
+        });
+      } else if (prerequisiteOrder >= nodeOrder) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Topic "${node.id}" prerequisite "${prerequisiteId}" must appear earlier in the path.`,
+        });
+      }
+    }
+  }
 });
 export type LearningPath = z.infer<typeof learningPathSchema>;
 export type LearningPathTopic = LearningPathTopicNode;
