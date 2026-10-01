@@ -14,6 +14,13 @@ import { api } from "@/convex/_generated/api";
 const requestSchema = z.object({
   topic: z.string().min(1).max(120),
   knowledgeProfile: knowledgeProfileSchema.nullable(),
+  onboarding: z.object({
+    level: z.enum(["beginner", "junior", "intermediate", "advanced"]),
+    learningGoal: z.enum(["first_job", "interview_prep", "improve_skills", "learn_new_tech", "production_skills", "master_topic"]),
+    learningStyle: z.enum(["more_practice", "balanced", "more_theory"]),
+    dailyTime: z.enum(["15min", "30min", "1hr", "2hr_plus"]),
+    specialty: z.enum(["frontend", "backend", "mobile", "data", "general"]),
+  }).optional(),
 });
 
 /**
@@ -66,7 +73,7 @@ export async function POST(req: Request) {
       tier: "reasoning",
     });
 
-    const learningPathId = await convexMutation(api.learningPaths.createLearningPath, {
+    const pathArgs = {
       userId: user._id,
       topic: body.topic,
       title: path.title,
@@ -74,7 +81,15 @@ export async function POST(req: Request) {
       knowledgeProfileSummary: body.knowledgeProfile?.summary,
       topics: path.topics,
       contentLocale: user.locale ?? "en",
-    });
+    };
+
+    const learningPathId =
+      !user.onboardingComplete && body.onboarding
+        ? await convexMutation(api.learningPaths.createInitialLearningPath, {
+            ...pathArgs,
+            ...body.onboarding,
+          })
+        : await convexMutation(api.learningPaths.createLearningPath, pathArgs);
 
     return NextResponse.json({ learningPathId, path });
   } catch (err) {
